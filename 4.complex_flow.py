@@ -190,6 +190,50 @@ def run_workflow(graph, metadata, start_nodes):
             if neighbor not in queue:
                 queue.append(neighbor)
 
+from graphlib import TopologicalSorter, CycleError
+
+def run_workflow(graph, metadata, start_nodes):
+    ts = TopologicalSorter(graph)
+    try:
+        ts.prepare()
+    except CycleError as e:
+        raise ValueError(f"❌ Cycle detected in workflow: {e}")
+
+    global_context = {}
+
+    while ts.is_active():
+        ready_nodes = list(ts.get_ready())
+
+        for node in ready_nodes:
+            meta = metadata[node]
+            input_model_names = meta['input_models']
+            output_model_name = meta['output_model']
+            func = node_functions[node]
+
+            input_fields = []
+            for model_name in input_model_names:
+                if model_name not in model_registry:
+                    raise ValueError(f"❌ Unknown model '{model_name}' for node {node}")
+                model = model_registry[model_name]
+                input_fields.extend(model.model_fields.keys())
+
+            if any(f not in global_context for f in input_fields):
+                ts.defer(node)
+                continue
+
+            print(f"\n▶ Running {node} ({', '.join(input_model_names)}) -> {output_model_name}")
+            combined_inputs = {k: global_context[k] for k in input_fields}
+            result = func(**combined_inputs)
+
+            if output_model_name:
+                output_model = model_registry[output_model_name]
+                if not isinstance(result, output_model):
+                    raise TypeError(f"❌ {node} returned wrong type: expected {output_model_name}, got {type(result)}")
+                global_context.update(result.model_dump())
+            elif isinstance(result, BaseModel):
+                global_context.update(result.model_dump())
+
+            ts.done(node)
 # -------- Main --------
 if __name__ == "__main__":
     graph, metadata = parse_mermaid_with_models(mermaid_definition)
