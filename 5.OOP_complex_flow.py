@@ -241,7 +241,6 @@ def collect_args_from_deps(
 def run_workflow(mermaid_text: str, model_registry: Dict[Type, str]):
     # --- Step 1: Parse the Mermaid text into a graph structure ---
     graph = parse_mermaid_with_models(mermaid_text)
-    print(json.dumps(graph,indent=4))
 
     # --- Step 2: Create a reverse lookup: name -> class ---
     name_to_class = {v: k for k, v in model_registry.items()}
@@ -295,7 +294,59 @@ def run_workflow(mermaid_text: str, model_registry: Dict[Type, str]):
 
     return results
 
+def validate_workflow_io(mermaid_text: str, model_registry: Dict[Type, str]) -> bool:
+    graph = parse_mermaid_with_models(mermaid_text)
+    name_to_class = {v: k for k, v in model_registry.items()}
+
+    all_valid = True
+
+    for node_name, meta in graph.items():
+        deps = meta["prev"]
+        cls = name_to_class.get(node_name)
+        if cls is None:
+            print(f"❌ Node '{node_name}' has no class registered.")
+            all_valid = False
+            continue
+
+        if not hasattr(cls, "Args"):
+            continue  # Node takes no input
+
+        required_fields = cls.Args.model_fields.keys()
+        available_fields = {}
+        field_source_map = defaultdict(list)
+
+        # Gather all output fields from dependencies
+        for dep in deps:
+            dep_cls = name_to_class.get(dep)
+            if dep_cls and hasattr(dep_cls, "Rets"):
+                for field in dep_cls.Rets.model_fields.keys():
+                    available_fields[field] = dep
+                    field_source_map[dep].append(field)
+
+        used_fields = set()
+
+        # Validate required inputs
+        for field in required_fields:
+            if field in available_fields:
+                used_fields.add(field)
+            else:
+                print(f"❌ Missing field '{field}' for node '{node_name}' (from deps: {deps})")
+                all_valid = False
+
+        # Check for unused outputs
+        for dep, fields in field_source_map.items():
+            unused = set(fields) - used_fields
+            if unused:
+                print(f"ℹ️ Info: '{dep} --> {node_name}' Fields not used : {sorted(unused)}")
+
+    if all_valid:
+        print("\n✅ Workflow validation passed: All inputs have matching outputs.")
+    else:
+        print("\n❌ Workflow validation failed. Review issues above.")
+
+    return all_valid
 
 # -------- Main --------
 if __name__ == "__main__":
+    valid = validate_workflow_io(mermaid_definition,model_registry)
     run_workflow(mermaid_definition,model_registry)
