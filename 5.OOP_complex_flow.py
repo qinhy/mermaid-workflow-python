@@ -1,13 +1,10 @@
 
 
-from typing import List, Dict, Any, Tuple
-import json
-from typing import List
+from typing import List, Dict, Any
 from pydantic import BaseModel
 import re
 from collections import defaultdict
 from graphlib import TopologicalSorter
-from typing import Dict, Any, Type
 
 # -------- Mermaid definition --------
 mermaid_definition = """
@@ -312,32 +309,37 @@ def validate_workflow_io(mermaid_text: str, model_registry: Dict[Type, str]) -> 
             continue  # Node takes no input
 
         required_fields = cls.Args.model_fields.keys()
-        available_fields = {}
+        field_to_sources = defaultdict(list)
         field_source_map = defaultdict(list)
 
-        # Gather all output fields from dependencies
+        # Collect all available output fields from deps
         for dep in deps:
             dep_cls = name_to_class.get(dep)
             if dep_cls and hasattr(dep_cls, "Rets"):
                 for field in dep_cls.Rets.model_fields.keys():
-                    available_fields[field] = dep
+                    field_to_sources[field].append(dep)
                     field_source_map[dep].append(field)
 
         used_fields = set()
 
-        # Validate required inputs
+        # Check for missing fields and mark used ones
         for field in required_fields:
-            if field in available_fields:
+            if field in field_to_sources:
                 used_fields.add(field)
             else:
                 print(f"❌ Missing field '{field}' for node '{node_name}' (from deps: {deps})")
                 all_valid = False
 
-        # Check for unused outputs
+        # Warn about conflicting fields (same field from multiple deps)
+        for field, sources in field_to_sources.items():
+            if len(sources) > 1 and field in required_fields:
+                print(f"⚠️ Warning: Field '{field}' for node '{node_name}' comes from multiple sources: {sources}")
+
+        # Info about unused fields from each dep
         for dep, fields in field_source_map.items():
             unused = set(fields) - used_fields
             if unused:
-                print(f"ℹ️ Info: '{dep} --> {node_name}' Fields not used : {sorted(unused)}")
+                print(f"ℹ️ Info: Fields from '{dep}' not used by '{node_name}': {sorted(unused)}")
 
     if all_valid:
         print("\n✅ Workflow validation passed: All inputs have matching outputs.")
