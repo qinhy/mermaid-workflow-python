@@ -9,7 +9,7 @@ from graphlib import TopologicalSorter
 # -------- Mermaid definition --------
 mermaid_definition = """
 graph TD
-    LoadUserData["{'pars':{'a':1}}"]
+    LoadUserData["{'pars':{'endpoint':'default_user_endpoint'}}"]
     LoadUserData --> ValidateUser
     LoadTransactions --> ValidateTransactions
 
@@ -63,7 +63,7 @@ def parse_mermaid_with_models(mermaid_text: str) -> Dict[str, Dict[str, Any]]:
 # -------- Pydantic Models --------
 class LoadUserData:
     class Pars(BaseModel):
-        endpoint: str = "default_user_endpoint"
+        endpoint: str = "NULL"
 
     class Args(BaseModel):
         pass
@@ -226,21 +226,6 @@ model_registry = {
     AuditData:"AuditData",
 }
 
-# -------- Mermaid parser --------
-def parse_mermaid_with_models(mermaid_text: str):
-    # Strip out header and whitespace
-    lines = [line.strip() for line in mermaid_text.strip().splitlines() if '-->' in line]
-    graph = defaultdict(lambda: {"prev": [], "next": []})
-    edge_pattern = re.compile(r"(\w+)\s*-->\s*(\w+)")
-    for line in lines:
-        match = edge_pattern.match(line)
-        if match:
-            src, dst = match.groups()
-            graph[src]["next"].append(dst)
-            graph[dst]["prev"].append(src)
-
-    return dict(graph)
-
 def collect_args_from_deps(
     node_name: str,
     args_fields: List[str],
@@ -305,6 +290,11 @@ def run_workflow(mermaid_text: str, model_registry: Dict[Type, str]):
 
             # --- Step 5a: Gather input arguments from dependencies ---
             deps = graph[node_name]["prev"]
+            conf = graph[node_name]["config"]
+            
+            if hasattr(cls, 'Pars'):
+                if conf and 'pars' in conf:
+                    instance.pars = cls.Pars(**conf['pars'])
 
             if hasattr(cls, 'Args'):
                 args_fields = cls.Args.model_fields.keys()
@@ -314,6 +304,10 @@ def run_workflow(mermaid_text: str, model_registry: Dict[Type, str]):
                     deps=deps,
                     results=results
                 )
+
+                if conf and 'args' in conf:
+                    args_data.update(conf['args'])
+
                 instance.args = cls.Args(**args_data)
 
             # --- Step 5b: Run the step logic ---
