@@ -1,6 +1,6 @@
 
-
-from typing import List, Dict, Any
+import json
+from typing import List, Dict, Any, Type
 from pydantic import BaseModel
 import re
 from collections import defaultdict
@@ -9,6 +9,7 @@ from graphlib import TopologicalSorter
 # -------- Mermaid definition --------
 mermaid_definition = """
 graph TD
+    LoadUserData["{'pars':{'a':1}}"]
     LoadUserData --> ValidateUser
     LoadTransactions --> ValidateTransactions
 
@@ -24,6 +25,41 @@ graph TD
     StoreData --> AuditData
 """
 
+def parse_mermaid_with_models(mermaid_text: str) -> Dict[str, Dict[str, Any]]:
+    lines = [line.strip() for line in mermaid_text.strip().splitlines()]
+    
+    graph = defaultdict(lambda: {"prev": [], "next": [], "config": None})
+    
+    # Pattern to detect node with config: NodeName["<json_string>"]
+    config_pattern = re.compile(r'^(\w+)\s*\[\s*"(.+)"\s*\]$')
+    edge_pattern = re.compile(r"(\w+)\s*-->\s*(\w+)")
+
+    # First pass: extract node configs
+    for line in lines:
+        if '-->' not in line:
+            config_match = config_pattern.match(line)
+            if config_match:
+                node, config_str = config_match.groups()
+                try:
+                    graph[node]["config"] = json.loads(config_str.replace("'", '"'))
+                except json.JSONDecodeError as e:
+                    raise ValueError(f"Invalid JSON for node '{node}': {e}")
+
+    # Second pass: extract edges
+    for line in lines:
+        if '-->' not in line:
+            continue
+
+        match = edge_pattern.match(line)
+        if match:
+            src, dst = match.groups()
+            graph[src]["next"].append(dst)
+            graph[dst]["prev"].append(src)
+        else:
+            raise ValueError(f"Invalid Mermaid edge syntax: {line}")
+
+    return dict(graph)
+
 # -------- Pydantic Models --------
 class LoadUserData:
     class Pars(BaseModel):
@@ -35,6 +71,10 @@ class LoadUserData:
     class Rets(BaseModel):
         user_id: int
         name: str
+
+    pars:Pars|None = None
+    args:Args|None = None
+    rets:Rets|None = None
 
     def __call__(self) -> 'LoadUserData.Rets':
         print("A: Loading user data")
@@ -49,6 +89,10 @@ class LoadTransactions:
 
     class Rets(BaseModel):
         transactions: List[float]
+
+    pars:Pars|None = None
+    args:Args|None = None
+    rets:Rets|None = None
 
     def __call__(self) -> 'LoadTransactions.Rets':
         print("B: Loading transaction data")
@@ -292,22 +336,22 @@ def run_workflow(mermaid_text: str, model_registry: Dict[Type, str]):
     return results
 
 def validate_workflow_io(mermaid_text: str, model_registry: Dict[Type, str]) -> bool:
+    print("\n🔍 Validating workflow I/O...")
     graph = parse_mermaid_with_models(mermaid_text)
     name_to_class = {v: k for k, v in model_registry.items()}
+    all_classes = [i for i in graph.keys() if i not in name_to_class]
+    if len(all_classes) > 0:
+        print(f"❌ Unknown classes found: {all_classes}")
+        return False
 
     all_valid = True
 
     for node_name, meta in graph.items():
         deps = meta["prev"]
         cls = name_to_class.get(node_name)
-        if cls is None:
-            print(f"❌ Node '{node_name}' has no class registered.")
-            all_valid = False
-            continue
 
         if not hasattr(cls, "Args"):
             continue  # Node takes no input
-
         required_fields = cls.Args.model_fields.keys()
         field_to_sources = defaultdict(list)
         field_source_map = defaultdict(list)
