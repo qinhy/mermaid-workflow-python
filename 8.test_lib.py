@@ -39,8 +39,8 @@ class Add(MermaidWorkflowFunction):
         
 class Subtract(MermaidWorkflowFunction):
     class Arguments(BaseModel):
-        sum: int
-        z: int
+        a: int
+        b: int
 
     class Returns(BaseModel):
         result: int
@@ -49,8 +49,8 @@ class Subtract(MermaidWorkflowFunction):
     rets: Returns | None = None
 
     def __call__(self):
-        result = self.args.sum - self.args.z
-        print(f"Subtract: {self.args.sum} - {self.args.z} = {result}")
+        result = self.args.a - self.args.b
+        print(f"Subtract: {self.args.a} - {self.args.b} = {result}")
         self.rets = self.Returns(result=result)
         return self.rets
         
@@ -176,8 +176,8 @@ graph TD
     Multiply["{'para': {'factor': 4}}"]
 
     Start -- "{'x':'a','y':'b'}" --> Add
-    Start --> Subtract
-    Add --> Subtract
+    Start -- "{'y':'b'}" --> Subtract
+    Add -- "{'sum':'a'}" --> Subtract
     Subtract -- "{'result':'x'}" --> Multiply
     Multiply --> ValidateResult
     ValidateResult --> End
@@ -209,11 +209,11 @@ graph TD
     results = engine.run("""
 graph TD
     Start["{'para': {'x': 7, 'y': 3, 'z': 2}}"]
-    Multiply["{'para': {'factor': 2}}"]
+    Multiply["{'para': {'factor': 3}}"]
 
     Start -- "{'x':'a','y':'b'}" --> Add
     Add -- "{'sum':'x'}" --> Multiply
-    Start -- "{'x':'sum'}" --> Subtract
+    Start -- "{'x':'a','y':'b'}" --> Subtract
     Multiply -- "{'product':'a'}" --> Modulus
     Subtract -- "{'result':'b'}" --> Modulus
     Modulus -- "{'remainder':'product'}" --> ValidateResult
