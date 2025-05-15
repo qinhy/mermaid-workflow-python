@@ -1,6 +1,6 @@
 
 import json
-from typing import List, Dict, Any, Type
+from typing import List, Dict, Any, Optional, Type
 from pydantic import BaseModel
 import re
 from collections import defaultdict
@@ -22,9 +22,9 @@ class MermaidWorkflowFunction(BaseModel):
         """Output values passed to successor nodes."""
         pass
 
-    para: Parameters | None = None
-    args: Arguments | None = None
-    rets: Returns | None = None
+    para: Optional[Parameters] = None
+    args: Optional[Arguments] = None
+    rets: Optional[Returns] = None
 
     def __call__(self) -> Returns:
         """Execute the workflow function and return results.
