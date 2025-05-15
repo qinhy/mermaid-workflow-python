@@ -88,8 +88,5 @@ model_registry = {
 
 # -------- Main --------
 if __name__ == "__main__":
-    engine = MermaidWorkflowEngine(mermaid_definition, model_registry)
-
-    # Optional validation
-    if engine.validate_io():
-        results = engine.run()
+    engine = MermaidWorkflowEngine(model_registry)
+    results = engine.run(mermaid_definition)
