@@ -1,7 +1,5 @@
-import json
 from pydantic import BaseModel
 from MermaidWorkflowEngine import MermaidWorkflowEngine, MermaidWorkflowFunction
-
 
 class Start(MermaidWorkflowFunction):
     class Parameters(BaseModel):
