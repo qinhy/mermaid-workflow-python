@@ -84,22 +84,31 @@ if __name__ == "__main__":
 
     test_graph = """
 graph TD
-    LoadImage["{'para': {'path': 'input.jpg'}}"]
-
-    ResizeImage["{'para': {'width': 256, 'height': 256}}"]
-    GrayscaleImage["{}"]
-    FlipImage["{'para': {'mode': 'horizontal'}}"]
-    RotateImage["{'para': {'angle': 90}}"]
-    EndImage["{}"]
+    LoadImage["{'para': {'path': './input.jpg'}}"]
+    ResizeImage["{'para': {'width': 512, 'height': 512}}"]
+    CropImage["{'para': {'left': 50, 'upper': 50, 'right': 462, 'lower': 462}}"]
+    BlurImage["{'para': {'radius': 3}}"]
+    RotateImage["{'para': {'angle': 270}}"]
+    AdjustImage["{'para': {'brightness': 1.2, 'contrast': 1.3, 'saturation': 0.9}}"]
+    FlipImage["{'para': {'mode': 'vertical'}}"]
+    WatermarkImage["{'para': {'text':'CONFIDENTIAL', 'position':'bottom_right', 'opacity':0.5}}"]
+    FilterImage["{'para': {'filter_type': 'sharpen'}}"]
+    ConvertImageFormat["{'para': {'format': 'png', 'quality':90}}"]
 
     LoadImage -- "{'path':'path'}" --> ResizeImage
-    ResizeImage -- "{'path':'path'}" --> GrayscaleImage
-    GrayscaleImage -- "{'path':'path'}" --> FlipImage
-    FlipImage -- "{'path':'path'}" --> RotateImage
-    RotateImage -- "{'path':'path'}" --> EndImage
+    ResizeImage -- "{'path':'path'}" --> CropImage
+    CropImage -- "{'path':'path'}" --> BlurImage
+    BlurImage -- "{'path':'path'}" --> GrayscaleImage
+    GrayscaleImage -- "{'path':'path'}" --> RotateImage
+
+    RotateImage -- "{'path':'path'}" --> AdjustImage
+    AdjustImage -- "{'path':'path'}" --> FlipImage
+    FlipImage -- "{'path':'path'}" --> WatermarkImage
+    WatermarkImage -- "{'path':'path'}" --> FilterImage
+    FilterImage -- "{'path':'path'}" --> ConvertImageFormat
+    ConvertImageFormat -- "{'path':'path'}" --> EndImage
 """
     # results = engine.run(test_graph,run_tool)
-
     # print("🔍 Setting available tools...")
     # op_ts = mcp_to_openai_tool(mcp_ts)
     # print("#### 🤖 Asking LLM about available tools...")
@@ -128,11 +137,10 @@ graph TD
 * Always **end with** a final node like: `C -- "{{'valid':'valid'}}" --> End`
 '''
     
-    response = asyncio.run(llm(
-        [
+    response = asyncio.run(llm([
             {"role": "system", "content": prompt},
             {"role": "user",
-                "content": "Please create a new graph. Use image of ./input.jpg"},
+                "content": "Please create a new simple graph. Use image of ./input.jpg"},
         ]))
     print(f"🔹 Response:\n{response}\n")
     print(f"🔹 Graph:\n{engine.extract_mermaid_text(response)}\n")
