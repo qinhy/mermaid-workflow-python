@@ -1,10 +1,14 @@
+from graphlib import TopologicalSorter
+from typing import Dict, Any, Callable, Optional
 
 import json
-from typing import List, Dict, Any, Optional, Type
+from typing import List, Dict, Any, Optional, Type, Union
 from pydantic import BaseModel
 import re
 from collections import defaultdict
 from graphlib import TopologicalSorter
+from pydantic import BaseModel, create_model
+from typing import Any, Dict, Tuple, Type, Annotated
 
 
 class MermaidWorkflowFunction(BaseModel):
@@ -56,6 +60,89 @@ class MermaidWorkflowFunction(BaseModel):
         self.rets = self.Returns(**rets)
 
     @classmethod
+    def from_mcp(cls, name: str, mcp_single_func_data: dict) -> 'MermaidWorkflowFunction':
+        # Helper: build model with proper type annotations
+        def build_model_from_properties(name: str, props: Dict[str, Any], required: list) -> Type[BaseModel]:
+            fields: Dict[str, Tuple[Any, Any]] = {}
+            for key, spec in props.items():
+                # Handle anyOf case for union types
+                if "anyOf" in spec:
+                    types = []
+                    for type_spec in spec["anyOf"]:
+                        if type_spec.get("type") == "integer":
+                            types.append(int)
+                        elif type_spec.get("type") == "number":
+                            types.append(float)
+                        elif type_spec.get("type") == "string":
+                            types.append(str)
+                        elif type_spec.get("type") == "boolean":
+                            types.append(bool)
+                        elif type_spec.get("type") == "null":
+                            types.append(type(None))
+                    field_type = Annotated[Union[tuple(types)], ...]
+                    fields[key] = (field_type, ...)
+                    continue
+
+                # Handle regular type specifications
+                try:
+                    type_str = spec["type"]
+                except KeyError:                    
+                    print(f"Processing field '{key}' with spec: {spec}")
+                    continue
+
+                match type_str:
+                    case "integer":
+                        field_type = Annotated[int, ...] if key in required else Annotated[int | None, None]
+                    case "number":
+                        field_type = Annotated[float, ...] if key in required else Annotated[float | None, None]
+                    case "string":
+                        field_type = Annotated[str, ...] if key in required else Annotated[str | None, None]
+                    case "boolean":
+                        field_type = Annotated[bool, ...] if key in required else Annotated[bool | None, None]
+                    case "array":
+                        item_type = spec.get("items", {}).get("type", "any")
+                        if item_type == "integer":
+                            field_type = Annotated[List[int], ...] if key in required else Annotated[List[int] | None, None]
+                        elif item_type == "number":
+                            field_type = Annotated[List[float], ...] if key in required else Annotated[List[float] | None, None]
+                        elif item_type == "string":
+                            field_type = Annotated[List[str], ...] if key in required else Annotated[List[str] | None, None]
+                        elif item_type == "boolean":
+                            field_type = Annotated[List[bool], ...] if key in required else Annotated[List[bool] | None, None]
+                        else:
+                            field_type = Annotated[List[Any], ...] if key in required else Annotated[List[Any] | None, None]
+                    case "object":
+                        field_type = Annotated[Dict[str, Any], ...] if key in required else Annotated[Dict[str, Any] | None, None]
+                    case _:
+                        raise NotImplementedError(f"Type '{type_str}' not supported yet.")
+                fields[key] = (field_type, ...)
+            return create_model(name, **fields)
+
+        defs = mcp_single_func_data["inputSchema"]["$defs"]
+        model_creation_args = {}
+        if "Parameters" in defs:
+            param_def = defs["Parameters"]
+            Parameters = build_model_from_properties("Parameters", param_def["properties"], param_def.get("required", []))
+            model_creation_args["para"] = (Parameters,...)
+
+        if "Arguments" in defs:
+            arg_def = defs["Arguments"]
+            Arguments = build_model_from_properties("Arguments", arg_def["properties"], arg_def.get("required", []))
+            model_creation_args["args"] = (Arguments,...)
+
+        if "Returns" in defs:
+            arg_def = defs["Returns"]
+            Returns = build_model_from_properties("Returns", arg_def["properties"], arg_def.get("required", []))
+            # model_creation_args["rets"] = (Returns,...)
+            
+        model_cls = create_model(name, **model_creation_args,__base__=MermaidWorkflowFunction)
+        if "Parameters" in defs:model_cls.Parameters = Parameters
+        if "Arguments" in defs:model_cls.Arguments = Arguments
+        if "Returns" in defs:model_cls.Returns = Returns
+
+        return model_cls
+
+    @classmethod
     def get_para_class_name(cls) -> str:
         """Get the name of the Parameters class."""
         return cls.Parameters.__name__
@@ -102,9 +189,21 @@ class MermaidWorkflowEngine:
         self.mermaid_text = ""
         self.model_registry = model_registry
         self.name_to_class = [(k,v) if type(k) is str else (v,k) for k, v in model_registry.items()]
-        self.name_to_class = {k:v for k,v in self.name_to_class}
+        self.name_to_class_dict = {k:v for k,v in self.name_to_class}
+        for k,v in self.name_to_class:
+            if type(v) is dict:
+                self.name_to_class_dict[k] = MermaidWorkflowFunction.from_mcp(k,v)
+        self.name_to_class = self.name_to_class_dict
         self.graph = {}
         self.results: Dict[str, Any] = {}
+
+    def extract_mermaid_text(self, text: str) -> str:
+        """Extract Mermaid flowchart text from a given text."""
+        mermaid_pattern = re.compile(r'```mermaid\n(.*?)```', re.DOTALL)
+        match = mermaid_pattern.search(text)
+        if match:
+            return match.group(1).strip()
+        return ""
 
     def parse_mermaid(self, mermaid_text:str) -> Dict[str, Dict[str, Any]]:
         self.mermaid_text = mermaid_text
@@ -122,18 +221,22 @@ class MermaidWorkflowEngine:
                 Subtract --> Multiply
                 Multiply --> ValidateResult
                 ValidateResult --> End
+        """
+        # graph TD           → Start of the top-down Mermaid graph
+        # Node_Name["{...}"]      → Define a node with init parameters (in JSON-like format)
+        # A --> B            → Connect A to B (no field mapping)
+        # A -- "{'x':'y'}" --> B   → Map output 'x' from A to input 'y' of B
+        # Use valid field names from each tool's input/output schema
+        # Always end with a final node like: C -- "{'valid':'valid'}" --> End
 
-        """
-        """
-        Parses Mermaid flowchart with:
-        - Node config: Node["{'para': {...}}"]
-        - Map config: A -- "{'x': 'y'}" --> B : x_to_y
-        """
         lines = [line.strip() for line in self.mermaid_text.strip().splitlines()]
+        lines = [line for line in lines if '["{' in line or '--' in line]
+        lines = [line for line in lines if '["{}"]' not in line]
+        lines = [line for line in lines if '%%' != line[:2]]
         graph = defaultdict(lambda: {
             "prev": [],
             "next": [],
-            "config": None,
+            "config": {},
             "maps": {}  # maps destination -> map config
         })
 
@@ -180,7 +283,6 @@ class MermaidWorkflowEngine:
                 graph[dst]["prev"].append(src)
                 continue
             
-            
             raise ValueError(f"Invalid Mermaid syntax: {line}")
 
         return dict(graph)
@@ -214,11 +316,11 @@ class MermaidWorkflowEngine:
 
         return args_data
     
-    def __node_args_fields(self, node_name: str):
+    def node_args_fields(self, node_name: str):
         cls:MermaidWorkflowFunction = self.name_to_class.get(node_name)
         return cls.get_argument_fields()
 
-    def __node_rets_fields(self, node_name: str):
+    def node_rets_fields(self, node_name: str):
         cls:MermaidWorkflowFunction = self.name_to_class.get(node_name)
         return cls.get_return_fields()
 
@@ -233,13 +335,13 @@ class MermaidWorkflowEngine:
 
         for node_name, meta in self.graph.items():
             deps = meta["prev"]
-            required_fields = self.__node_args_fields(node_name)
+            required_fields = self.node_args_fields(node_name)
             mapped_fields = set()
             field_sources = defaultdict(list)
 
             for dep in deps:
-                dep_rets = self.__node_rets_fields(dep)
-                map_config = self.graph[dep].get("maps", {}).get(node_name, {})
+                dep_rets = self.node_rets_fields(dep)
+                map_config:dict = self.graph[dep].get("maps", {}).get(node_name, {})
 
                 # default 1-to-1 mapping if no explicit map
                 for field in dep_rets:
@@ -248,6 +350,12 @@ class MermaidWorkflowEngine:
                         field_sources[field].append(dep)
 
                 if map_config:
+                    for src_field, dst_field in map_config.items():
+                        if src_field not in dep_rets:
+                            print(f"❌ Field '{src_field}' not found in '{dep}({dep_rets})' for mapping to '{node_name}'")
+                            all_valid = False
+                            continue
+
                     for src_field, dst_field in map_config.items():
                         if dst_field in required_fields:
                             mapped_fields.add(dst_field)
@@ -269,52 +377,73 @@ class MermaidWorkflowEngine:
         return all_valid
 
 
-    def run(self, mermaid_text: str) -> Dict[str, Any]:
+    def run(self, mermaid_text: str, ignite_func: Optional[Callable] = None) -> Dict[str, Any]:
+        if ignite_func is None:
+            ignite_func = lambda obj, args: obj()
+
         self.mermaid_text = mermaid_text
         self.graph = self._parse_mermaid()
+
         if not self.validate_io():
             print("❌ Workflow validation failed. Exiting.")
             return {}
 
-        ts = TopologicalSorter()
-        for node, meta in self.graph.items():
-            ts.add(node, *meta["prev"])
-        ts.prepare()
+        # Build the dependency graph for topological sorting
+        ts_graph = {node: meta["prev"] for node, meta in self.graph.items()}
+        sorter = TopologicalSorter(ts_graph)
+        execution_order = list(sorter.static_order())
 
-        while ts.is_active():
-            for node_name in ts.get_ready():
-                self.results[node_name] = {}
-                cls: MermaidWorkflowFunction = self.name_to_class[node_name]
-                instance = cls()
+        for node_name in execution_order:
+            self.results[node_name] = {}
+            cls = self.name_to_class[node_name]
 
-                deps = self.graph[node_name]["prev"]
-                args_data = {}
+            # Collect inputs from dependencies
+            args_data = {}
+            deps = self.graph[node_name]["prev"]
+            for dep in deps:
+                dep_results = self.results.get(dep, {})
+                map_config = self.graph[dep].get("maps", {}).get(node_name, {})
 
-                for dep in deps:
-                    dep_results = self.results.get(dep, {})
-                    map_config = self.graph[dep].get("maps", {}).get(node_name, {})
+                # Default direct field matching
+                for field in dep_results:
+                    if field in cls.get_argument_fields():
+                        args_data[field] = dep_results[field]
 
-                    # fallback to direct matching if no map
-                    for field in dep_results:
-                        if field in cls.get_argument_fields():
-                            args_data[field] = dep_results[field]
-                            
-                    if map_config:
-                        for src_field, dst_field in map_config.items():
-                            if src_field in dep_results:
-                                args_data[dst_field] = dep_results[src_field]
+                # Field remapping
+                for src_field, dst_field in map_config.items():
+                    if src_field in dep_results:
+                        args_data[dst_field] = dep_results[src_field]
 
-                instance.args = cls.Arguments(**args_data)
+            # Merge static config
+            conf = self.graph[node_name].get("config", {}) or {}
+            para_data = conf.get("para", {})
+            args_data.update(conf.get("args", {}))
 
-                conf = self.graph[node_name]["config"]
-                instance.update_para(conf)
-                instance.update_args(conf)
+            cls_data = {}
+            try:
+                if hasattr(cls, "Parameters") and len(cls.Parameters.model_fields) > 0:
+                    cls_data['para'] = cls.Parameters(**para_data)
+                if hasattr(cls, "Arguments") and len(cls.Arguments.model_fields) > 0:
+                    cls_data['args'] = cls.Arguments(**args_data)
+            except Exception as e:
+                print(f"❌ Error validating config for '{node_name}': {e}")
+                continue
 
-                instance()
+            print(f"\n🔄 Executing node '{node_name}' with: {args_data}")
+
+            try:
+                instance = cls(**cls_data)
+                res = ignite_func(instance, cls_data)
+
+                # Extract return values
                 if hasattr(instance, "rets") and hasattr(instance.rets, "model_dump"):
                     self.results[node_name] = instance.rets.model_dump()
+                elif isinstance(res, dict) and "rets" in res:
+                    self.results[node_name] = res["rets"]
 
-                ts.done(node_name)
+            except Exception as e:
+                print(f"❌ Error executing node '{node_name}': {e}")
+                continue
 
         print("\n✅ Final outputs:")
         for step_name, output in self.results.items():

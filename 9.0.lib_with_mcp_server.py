@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Optional
-from MermaidWorkflowEngine import MermaidWorkflowFunction
+from MermaidWorkflowEngine import MermaidWorkflowFunction,MermaidWorkflowEngine
 from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP(name="MathServer", stateless_http=True)
@@ -22,7 +22,7 @@ class Start(MermaidWorkflowFunction):
     rets: Optional[Returns] = None
 
     def __init__(self, para: Parameters, rets: Optional[Returns] = None):
-        super().__init__(para=para, rets=rets)
+        super().__init__(para=para,rets=rets)
         self()
         
     def __call__(self):
@@ -239,7 +239,7 @@ if __name__ == "__main__":
 #     Subtract -- "{'result':'x'}" --> Multiply
 #     Multiply --> ValidateResult
 #     ValidateResult --> End
-# """)
+# """,lambda obj:obj)
     
 #     results = engine.run("""
 # graph TD
@@ -249,7 +249,7 @@ if __name__ == "__main__":
 #     Start -- "{'x':'a','z':'b'}" --> Modulus
 #     Divide -- "{'quotient':'product'}" --> ValidateResult
 #     ValidateResult --> End
-# """)
+# """,lambda obj:obj)
     
 #     results = engine.run("""
 # graph TD
@@ -262,7 +262,7 @@ if __name__ == "__main__":
 #     Multiply --> ValidateResult
 #     Divide --> ValidateResult
 #     ValidateResult --> End
-# """)
+# """,lambda obj:obj)
     
 #     results = engine.run("""
 # graph TD
@@ -276,4 +276,4 @@ if __name__ == "__main__":
 #     Subtract -- "{'result':'b'}" --> Modulus
 #     Modulus -- "{'remainder':'product'}" --> ValidateResult
 #     ValidateResult --> End
-# """)
+# """,lambda obj:obj)

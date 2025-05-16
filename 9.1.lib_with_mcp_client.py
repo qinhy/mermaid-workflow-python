@@ -5,7 +5,9 @@ import asyncio
 from fastmcp import Client
 from fastmcp.client.transports import PythonStdioTransport
 
-SERVER_SCRIPT = "./9.2.lib_with_mcp_server.py"
+from MermaidWorkflowEngine import MermaidWorkflowEngine
+
+SERVER_SCRIPT = "./9.0.lib_with_mcp_server.py"
 async def get_tools()->str:
     transport = PythonStdioTransport(script_path=SERVER_SCRIPT)
     async with Client(transport) as client:
@@ -16,37 +18,35 @@ async def call_tool(tool_name, tool_args)->str:
     transport = PythonStdioTransport(script_path=SERVER_SCRIPT)
     async with Client(transport) as client:
         result = await client.call_tool(tool_name, tool_args)
-        return json.dumps([r.text for r in result][0])
+        return [r.text for r in result][0]
 
 # -------- Main --------
 if __name__ == "__main__":
-    print(asyncio.run(get_tools()))
-    print(asyncio.run(call_tool('Start',{'para': {'x': 1, 'y': 2, 'z': 3}}
-                                )))
-#     engine = MermaidWorkflowEngine(model_registry = {
-#                 'Start':Start,
-#                 'Add':Add,
-#                 'Subtract':Subtract,
-#                 'Multiply':Multiply,
-#                 'ValidateResult':ValidateResult,
-#                 'Divide':Divide,
-#                 'Modulus':Modulus,
-#                 'Compare':Compare,
-#                 'End':End,                
-#             })
-    
-#     results = engine.run("""
-# graph TD
-#     Start["{'para': {'x': 10, 'y': 5, 'z': 3}}"]
-#     Multiply["{'para': {'factor': 4}}"]
+    ts = asyncio.run(get_tools())
+    tsd = {t['name']:t for t in json.loads(ts)}
+    # print(asyncio.run(call_tool('Start',{'para': {'x': 1, 'y': 2, 'z': 3}}
+                                # )))
+    # print(tsd)
+    engine = MermaidWorkflowEngine(model_registry = tsd)
+    def run_tool(tool_name, tool_args):
+        if type(tool_args) is not str:
+            tool_name = tool_name.__class__.__name__
+        res_json = asyncio.run(call_tool(tool_name, tool_args))
+        res = json.loads(res_json)
+        return res
 
-#     Start -- "{'x':'a','y':'b'}" --> Add
-#     Start -- "{'y':'b'}" --> Subtract
-#     Add -- "{'sum':'a'}" --> Subtract
-#     Subtract -- "{'result':'x'}" --> Multiply
-#     Multiply --> ValidateResult
-#     ValidateResult --> End
-# """)
+    results = engine.run("""
+graph TD
+    Start["{'para': {'x': 10, 'y': 5, 'z': 3}}"]
+    Multiply["{'para': {'factor': 4}}"]
+
+    Start -- "{'x':'a','y':'b'}" --> Add
+    Start -- "{'y':'b'}" --> Subtract
+    Add -- "{'sum':'a'}" --> Subtract
+    Subtract -- "{'result':'x'}" --> Multiply
+    Multiply --> ValidateResult
+    ValidateResult --> End
+""",run_tool)
     
 #     results = engine.run("""
 # graph TD
