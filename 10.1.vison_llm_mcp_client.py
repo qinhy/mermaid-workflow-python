@@ -70,7 +70,7 @@ async def llm(messages, tools=[]):
 if __name__ == "__main__":
     mcp_ts = asyncio.run(get_tools())
     tsd = {t['name']:t for t in json.loads(mcp_ts)}
-    
+
     engine = MermaidWorkflowEngine(model_registry = tsd)
     def run_tool(tool_name, tool_args):
         tool_args = {k:(v.model_dump() if hasattr(v,'model_dump') else v) for k,v in tool_args.items()}
@@ -108,8 +108,7 @@ graph TD
     
     print("#### 🤖 Asking LLM to generate a new graph...")
     prompt = f'''
-**I have an example graph and a list of all available tools in JSON format in the following code blocks.
-Please create a new graph example for me.**
+**I have an example graph and a list of all available tools in JSON format in the following code blocks.**
 
 ```json
 {json.dumps(tsd,indent=4)}
@@ -129,7 +128,37 @@ Please create a new graph example for me.**
 * Always **end with** a final node like: `C -- "{{'valid':'valid'}}" --> End`
 '''
     
-    response = asyncio.run(llm(prompt+"* Use image of "+"./input.jpg"))
+    response = asyncio.run(llm(
+        [
+            {"role": "system", "content": prompt},
+            {"role": "user",
+                "content": "Please create a new graph. Use image of ./input.jpg"},
+        ]))
     print(f"🔹 Response:\n{response}\n")
     print(f"🔹 Graph:\n{engine.extract_mermaid_text(response)}\n")
     print(engine.run(engine.extract_mermaid_text(response),run_tool))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

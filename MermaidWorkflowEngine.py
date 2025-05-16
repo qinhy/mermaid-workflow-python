@@ -282,7 +282,7 @@ class MermaidWorkflowEngine:
                 graph[src]["next"].append(dst)
                 graph[dst]["prev"].append(src)
                 continue
-            
+
             raise ValueError(f"Invalid Mermaid syntax: {line}")
 
         return dict(graph)
@@ -367,7 +367,7 @@ class MermaidWorkflowEngine:
                     all_valid = False
 
             for field, sources in field_sources.items():
-                if len(sources) > 1:
+                if len(set(sources)) > 1:
                     print(f"⚠️ Field '{field}' for node '{node_name}' comes from multiple sources: {sources}")
 
         if all_valid:
