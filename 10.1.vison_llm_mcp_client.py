@@ -70,8 +70,7 @@ async def llm(messages, tools=[]):
 if __name__ == "__main__":
     mcp_ts = asyncio.run(get_tools())
     tsd = {t['name']:t for t in json.loads(mcp_ts)}
-    # print(asyncio.run(call_tool('Start',{'para': {'x': 1, 'y': 2, 'z': 3}}
-                                # )))
+    
     engine = MermaidWorkflowEngine(model_registry = tsd)
     def run_tool(tool_name, tool_args):
         tool_args = {k:(v.model_dump() if hasattr(v,'model_dump') else v) for k,v in tool_args.items()}
