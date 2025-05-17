@@ -239,7 +239,7 @@ if __name__ == "__main__":
 #     Subtract -- "{'result':'x'}" --> Multiply
 #     Multiply --> ValidateResult
 #     ValidateResult --> End
-# """,lambda obj:obj)
+# """,lambda obj,args:obj)
     
 #     results = engine.run("""
 # graph TD
@@ -249,7 +249,7 @@ if __name__ == "__main__":
 #     Start -- "{'x':'a','z':'b'}" --> Modulus
 #     Divide -- "{'quotient':'product'}" --> ValidateResult
 #     ValidateResult --> End
-# """,lambda obj:obj)
+# """,lambda obj,args:obj)
     
 #     results = engine.run("""
 # graph TD
@@ -262,7 +262,7 @@ if __name__ == "__main__":
 #     Multiply --> ValidateResult
 #     Divide --> ValidateResult
 #     ValidateResult --> End
-# """,lambda obj:obj)
+# """,lambda obj,args:obj)
     
 #     results = engine.run("""
 # graph TD
@@ -276,4 +276,4 @@ if __name__ == "__main__":
 #     Subtract -- "{'result':'b'}" --> Modulus
 #     Modulus -- "{'remainder':'product'}" --> ValidateResult
 #     ValidateResult --> End
-# """,lambda obj:obj)
+# """,lambda obj,args:obj)

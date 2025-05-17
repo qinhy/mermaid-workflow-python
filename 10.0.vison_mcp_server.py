@@ -1,5 +1,6 @@
 from io import BytesIO
 import tempfile
+import numpy as np
 from pydantic import BaseModel, Field
 from typing import List, Optional, Tuple
 
@@ -107,8 +108,7 @@ class RotateImage(MermaidWorkflowFunction):
         except Exception as e:
             raise ValueError(f"RotateImage failed: {e}")
 
-
-@mcp.tool(description="Convert an image to grayscale.")
+@mcp.tool(description="Convert an image to 8-bit grayscale (ImageJ style).")
 class GrayscaleImage(MermaidWorkflowFunction):
     class Arguments(BaseModel):
         path: str
@@ -127,11 +127,34 @@ class GrayscaleImage(MermaidWorkflowFunction):
         try:
             if not os.path.exists(self.args.path):
                 raise FileNotFoundError(f"Image not found: {self.args.path}")
-            img = Image.open(self.args.path).convert("L")
+
+            img = Image.open(self.args.path)
+            img_mode = img.mode
+
+            # Convert to numpy array for detailed control
+            img_np = np.array(img)            
+
+            # If it's not 8-bit, rescale to 0–255
+            if img_np.dtype == np.uint16:
+                img_np = (img_np / 256).astype(np.uint8)
+            elif img_np.dtype == np.float32 or img_np.dtype == np.float64:
+                img_np = np.clip(img_np, 0, 1)  # normalize if needed
+                img_np = (img_np * 255).astype(np.uint8)
+
+            # Convert RGB to grayscale if needed
+            if img_mode in ["RGB", "RGBA"]:
+                # Use weighted RGB to grayscale conversion (ITU-R BT.601)
+                # img_np = np.dot(img_np[...,:3], [0.2989, 0.5870, 0.1140])
+                img_np = img_np.mean(2).astype(np.uint8)
+
+            # Convert back to PIL and save
+            img_8bit = Image.fromarray(img_np, mode='L')
             output_path = f"{os.path.splitext(self.args.path)[0]}_gray.jpg"
-            img.save(output_path)
+            img_8bit.save(output_path)
+
             self.rets = self.Returns(path=output_path)
             return self.rets
+
         except Exception as e:
             raise ValueError(f"GrayscaleImage failed: {e}")
 
@@ -281,8 +304,6 @@ class AdjustImage(MermaidWorkflowFunction):
     rets: Optional[Returns] = None
 
     def __init__(self, args: Arguments, para: Parameters = None, rets: Optional[Returns] = None):
-        if para is None:
-            para = self.Parseters()
         super().__init__(args=args, para=para, rets=rets)
         self()
 
@@ -724,36 +745,35 @@ class ImageTiler(MermaidWorkflowFunction):
 
 # -------- Main --------
 if __name__ == "__main__":
-    # mcp.run(transport="stdio")
+    mcp.run(transport="stdio")
 
-    engine = MermaidWorkflowEngine(model_registry = {
-        'LoadImage':LoadImage,
-        'ResizeImage':ResizeImage,
-        'RotateImage':RotateImage,
-        'GrayscaleImage':GrayscaleImage,
-        'CropImage':CropImage,
-        'FlipImage':FlipImage,
-        'BlurImage':BlurImage,
-        'AdjustImage':AdjustImage,
-        'FilterImage':FilterImage,
-        'WatermarkImage':WatermarkImage,
-        'ConvertImageFormat':ConvertImageFormat,
-        'ImageTiler':ImageTiler,
-        'EndImage':EndImage,
-            })
+#     engine = MermaidWorkflowEngine(model_registry = {
+#         'LoadImage':LoadImage,
+#         'ResizeImage':ResizeImage,
+#         'RotateImage':RotateImage,
+#         'GrayscaleImage':GrayscaleImage,
+#         'CropImage':CropImage,
+#         'FlipImage':FlipImage,
+#         'BlurImage':BlurImage,
+#         'AdjustImage':AdjustImage,
+#         'FilterImage':FilterImage,
+#         'WatermarkImage':WatermarkImage,
+#         'ConvertImageFormat':ConvertImageFormat,
+#         'ImageTiler':ImageTiler,
+#         'EndImage':EndImage,
+#             })
     
-    itc = load_RSA("./tmp/image_tiler.json","./tmp/private_key.pem")    
-    print(f"""
-graph TD
-    ImageTiler["{{ {itc} }}"]
-    ImageTiler --> EndImage
-""")
-    
-    results = engine.run(f"""
-graph TD
-    ImageTiler["{{ {itc} }}"]
-    ImageTiler --> EndImage
-""",lambda obj:obj)
+#     itc = load_RSA("./tmp/image_tiler.json","./tmp/private_key.pem")    
+#     aic = {'para':{'brightness':4.5,'contrast':4.5,'saturation':1.0}}
+#     results = engine.run(f"""
+# graph TD
+#     ImageTiler["{itc}"]
+#     AdjustImage["{aic}"]
+
+#     ImageTiler --> AdjustImage
+#     AdjustImage --> GrayscaleImage
+#     GrayscaleImage --> EndImage
+# """,lambda obj,args:obj)
     
 #     results = engine.run("""
 # graph TD

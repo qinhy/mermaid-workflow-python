@@ -30,8 +30,9 @@ def parse_mermaid(mermaid_text: str) -> dict:
     def parse_json(s: str) -> Any:
         try:
             return json.loads(s.replace("'", '"'))
-        except Exception:
-            return None
+        except Exception as e:
+            print(s)
+            raise e
 
     for l in lines:
         if not l or l.startswith("graph"):
@@ -309,7 +310,9 @@ class MermaidWorkflowEngine:
 
         for node, meta in self.graph.items():
             deps = meta.get("prev", [])
+            node_cfg:dict = meta.get("config", {})
             required = set(self.node_args_fields(node))
+            required = required - set(node_cfg.get('args',{}).keys())
             mapped_fields = set()
             field_sources = defaultdict(list)
 
@@ -437,7 +440,8 @@ class MermaidWorkflowEngine:
                 print(f"❌ Error validating config for '{node_name}': {e}")
                 continue
 
-            print(f"\n🔄 Executing node '{node_name}' with: {args_data}")
+            print(f"\n🔄 Executing node '{node_name}' with para: {para_data}")
+            print(f"\n🔄 Executing node '{node_name}' with args: {args_data}")
 
             try:
                 instance:MermaidWorkflowFunction = cls(**cls_data)
