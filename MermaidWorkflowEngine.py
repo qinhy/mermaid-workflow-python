@@ -1,15 +1,65 @@
-from graphlib import TopologicalSorter
-from typing import Dict, Any, Callable, Optional
-
-import json
-from typing import List, Dict, Any, Optional, Type, Union
-from pydantic import BaseModel
-import re
 from collections import defaultdict
 from graphlib import TopologicalSorter
 from pydantic import BaseModel, create_model
-from typing import Any, Dict, Tuple, Type, Annotated
+from typing import (
+    Any, 
+    Annotated,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    Type,
+    Union
+)
+import json
+import re
 
+
+def parse_mermaid(mermaid_text: str) -> dict:
+    lines = [l.strip() for l in mermaid_text.strip().splitlines()]
+    lines = [l for l in lines if ('["{' in l) or ('--' in l)]
+    lines = [l for l in lines if '["{}"]' not in l]
+    lines = [l for l in lines if not l.startswith('%%')]
+    graph = defaultdict(lambda: {"prev": [], "next": [], "config": {}, "maps": {}})
+
+    node_pattern = re.compile(r'^([\w-]+)\s*\[\s*"(.+)"\s*\]$')
+    map_pattern = re.compile(r'^([\w-]+)\s*--\s*"(.*?)"\s*-->\s*([\w-]+)$')
+    simple_pattern = re.compile(r'^([\w-]+)\s*-->\s*([\w-]+)$')
+
+    def parse_json(s: str) -> Any:
+        try:
+            return json.loads(s.replace("'", '"'))
+        except Exception:
+            return None
+
+    for l in lines:
+        if not l or l.startswith("graph"):
+            continue
+        m = node_pattern.match(l)
+        if m:
+            node, cfg = m.groups()
+            parsed = parse_json(cfg)
+            if parsed is not None:
+                graph[node]["config"] = parsed
+            continue
+        m = map_pattern.match(l)
+        if m:
+            src, cfg, dst = m.groups()
+            graph[src]["next"].append(dst)
+            graph[dst]["prev"].append(src)
+            parsed = parse_json(cfg)
+            if parsed is not None:
+                graph[src]["maps"][dst] = parsed
+            continue
+        m = simple_pattern.match(l)
+        if m:
+            src, dst = m.groups()
+            graph[src]["next"].append(dst)
+            graph[dst]["prev"].append(src)
+            continue
+        raise ValueError(f"Invalid Mermaid syntax: {l}")
+    return dict(graph)
 
 class MermaidWorkflowFunction(BaseModel):
     """Base class for workflow function nodes with parameters, arguments and returns."""
@@ -207,86 +257,8 @@ class MermaidWorkflowEngine:
 
     def parse_mermaid(self, mermaid_text:str) -> Dict[str, Dict[str, Any]]:
         self.mermaid_text = mermaid_text
-        return self._parse_mermaid()
+        return parse_mermaid(self.mermaid_text)
     
-    def _parse_mermaid(self) -> Dict[str, Dict[str, Any]]:
-        """
-            graph TD
-                Start["{'para': {'x': 10, 'y': 5, 'z': 3}}"]
-                Multiply["{'para': {'factor': 4}}"]
-
-                Start -- "{'x':'y'}" --> Add
-                Start --> Subtract
-                Add --> Subtract
-                Subtract --> Multiply
-                Multiply --> ValidateResult
-                ValidateResult --> End
-        """
-        # graph TD           → Start of the top-down Mermaid graph
-        # Node_Name["{...}"]      → Define a node with init parameters (in JSON-like format)
-        # A --> B            → Connect A to B (no field mapping)
-        # A -- "{'x':'y'}" --> B   → Map output 'x' from A to input 'y' of B
-        # Use valid field names from each tool's input/output schema
-        # Always end with a final node like: C -- "{'valid':'valid'}" --> End
-
-        lines = [line.strip() for line in self.mermaid_text.strip().splitlines()]
-        lines = [line for line in lines if '["{' in line or '--' in line]
-        lines = [line for line in lines if '["{}"]' not in line]
-        lines = [line for line in lines if '%%' != line[:2]]
-        graph = defaultdict(lambda: {
-            "prev": [],
-            "next": [],
-            "config": {},
-            "maps": {}  # maps destination -> map config
-        })
-
-        node_config_pattern = re.compile(r'^(\w+)\s*\[\s*"(.+)"\s*\]$')
-        map_with_config_pattern = re.compile(r'^(\w+)\s*--\s*"(.*?)"\s*-->\s*(\w+)$')
-        simple_map_pattern = re.compile(r'^(\w+)\s*-->\s*(\w+)$')
-
-        def parse_single_quote_json(json_str: str) -> Any:
-            try:
-                return json.loads(json_str.replace("'", '"'))
-            except json.JSONDecodeError as e:
-                print(f"⚠️ JSON parse error: {e} in {json_str}")
-                return None
-
-        for line in lines:
-            if not line or line.startswith("graph"):
-                continue
-
-            # Node config: Node["{...}"]
-            node_match = node_config_pattern.match(line)
-            if node_match:
-                node, config_str = node_match.groups()
-                config = parse_single_quote_json(config_str)
-                if config is not None:
-                    graph[node]["config"] = config
-                continue
-
-            # Map with config: A -- "{...}" --> B
-            map_match = map_with_config_pattern.match(line)
-            if map_match:
-                src, config_str, dst = map_match.groups()
-                config = parse_single_quote_json(config_str)
-                graph[src]["next"].append(dst)
-                graph[dst]["prev"].append(src)
-                if config is not None:
-                    graph[src]["maps"][dst] = config
-                continue
-
-            # Simple map: A --> B
-            simple_map_match = simple_map_pattern.match(line)
-            if simple_map_match:
-                src, dst = simple_map_match.groups()
-                graph[src]["next"].append(dst)
-                graph[dst]["prev"].append(src)
-                continue
-
-            raise ValueError(f"Invalid Mermaid syntax: {line}")
-
-        return dict(graph)
-
     def _collect_args_from_deps(self, node_name: str, args_fields: List[str], deps: List[str]) -> Dict[str, Any]:
         args_data = {}
         used_fields = set()
@@ -326,54 +298,90 @@ class MermaidWorkflowEngine:
 
     def validate_io(self) -> bool:
         print("\n🔍 Validating workflow I/O with mapping support...")
-        all_classes = [i for i in self.graph.keys() if i not in self.name_to_class]
-        if all_classes:
-            print(f"❌ Unknown classes found: {all_classes}")
+
+        # 1. Unknown classes check
+        unknown = set(self.graph) - set(self.name_to_class)
+        if unknown:
+            print(f"❌ Unknown classes found: {unknown}")
             return False
 
         all_valid = True
 
-        for node_name, meta in self.graph.items():
-            deps = meta["prev"]
-            required_fields = self.node_args_fields(node_name)
+        for node, meta in self.graph.items():
+            deps = meta.get("prev", [])
+            required = set(self.node_args_fields(node))
             mapped_fields = set()
             field_sources = defaultdict(list)
 
+            if not deps:
+                if required:
+                    print(f"❌ Node '{node}' has no dependencies but requires inputs {sorted(required)}")
+                    all_valid = False
+                else:
+                    print(f"⚠️ Node '{node}' has no dependencies and no required inputs.")
+                # continue to next node
+                continue
+
             for dep in deps:
-                dep_rets = self.node_rets_fields(dep)
-                map_config:dict = self.graph[dep].get("maps", {}).get(node_name, {})
+                dep_rets = set(self.node_rets_fields(dep))
+                map_cfg = self.graph[dep].get("maps", {}).get(node, {})
 
-                # default 1-to-1 mapping if no explicit map
-                for field in dep_rets:
-                    if field in required_fields:
-                        mapped_fields.add(field)
-                        field_sources[field].append(dep)
-
-                if map_config:
-                    for src_field, dst_field in map_config.items():
-                        if src_field not in dep_rets:
-                            print(f"❌ Field '{src_field}' not found in '{dep}({dep_rets})' for mapping to '{node_name}'")
-                            all_valid = False
-                            continue
-
-                    for src_field, dst_field in map_config.items():
-                        if dst_field in required_fields:
-                            mapped_fields.add(dst_field)
-                            field_sources[dst_field].append(dep)
-
-            for field in required_fields:
-                if field not in mapped_fields:
-                    print(f"❌ Missing field '{field}' for node '{node_name}' from dependencies: {deps}")
+                # — 1) Validate explicit mappings
+                bad_srcs = set(map_cfg) - dep_rets
+                if bad_srcs:
+                    for src in bad_srcs:
+                        print(f"❌ Field '{src}' not found in '{dep}' outputs {sorted(dep_rets)} for mapping to '{node}'")
                     all_valid = False
 
-            for field, sources in field_sources.items():
-                if len(set(sources)) > 1:
-                    print(f"⚠️ Field '{field}' for node '{node_name}' comes from multiple sources: {sources}")
+                # Warn on mappings to unused dst-fields
+                bad_dsts = set(map_cfg.values()) - required
+                if bad_dsts:
+                    for dst in bad_dsts:
+                        print(f"⚠️ Mapping to '{dst}' ignored—it's not a required field of '{node}'")
+                
+                # Warn on redundant 1:1 mappings (src == dst)
+                for src, dst in map_cfg.items():
+                    if src == dst and src in required:
+                        print(f"⚠️ Redundant explicit mapping '{src}→{dst}' for '{node}' (1:1 mapping)")
 
+                # — 2) Apply explicit mappings
+                used_by_dep = set()
+                for src, dst in map_cfg.items():
+                    if src in dep_rets and dst in required:
+                        mapped_fields.add(dst)
+                        field_sources[dst].append(dep)
+                        used_by_dep.add(src)
+
+                # — 3) Default 1:1 mappings for anything left over
+                default_mapped = (dep_rets & required) - set(map_cfg.values())
+                for fld in default_mapped:
+                    mapped_fields.add(fld)
+                    field_sources[fld].append(dep)
+                    used_by_dep.add(fld)
+
+                # — 4) Warn about any outputs of dep that go completely unused
+                unused = dep_rets - used_by_dep
+                if unused:
+                    print(f"⚠️ From '{dep}' → '{node}', these outputs are never used: {sorted(unused)}")
+
+            # — 5) Check for missing required fields
+            missing = required - mapped_fields
+            if missing:
+                for fld in sorted(missing):
+                    print(f"❌ Missing field '{fld}' for node '{node}' from dependencies {deps}")
+                all_valid = False
+
+            # — 6) Warn if any field comes from multiple deps
+            for fld, sources in field_sources.items():
+                if len(set(sources)) > 1:
+                    print(f"⚠️ Field '{fld}' for node '{node}' comes from multiple sources: {sources}")
+
+        # — 7) Final summary
         if all_valid:
             print("\n✅ Workflow validation passed: All inputs are satisfied.")
         else:
             print("\n❌ Workflow validation failed. See messages above.")
+
         return all_valid
 
 
@@ -381,8 +389,7 @@ class MermaidWorkflowEngine:
         if ignite_func is None:
             ignite_func = lambda obj, args: obj()
 
-        self.mermaid_text = mermaid_text
-        self.graph = self._parse_mermaid()
+        self.graph = self.parse_mermaid(mermaid_text)
 
         if not self.validate_io():
             print("❌ Workflow validation failed. Exiting.")
@@ -395,14 +402,15 @@ class MermaidWorkflowEngine:
 
         for node_name in execution_order:
             self.results[node_name] = {}
-            cls = self.name_to_class[node_name]
+            cls:MermaidWorkflowFunction = self.name_to_class[node_name]
 
             # Collect inputs from dependencies
             args_data = {}
             deps = self.graph[node_name]["prev"]
             for dep in deps:
                 dep_results = self.results.get(dep, {})
-                map_config = self.graph[dep].get("maps", {}).get(node_name, {})
+                map_config:dict = self.graph[dep].get("maps", {})
+                map_config:dict = map_config.get(node_name, {})
 
                 # Default direct field matching
                 for field in dep_results:
@@ -432,7 +440,7 @@ class MermaidWorkflowEngine:
             print(f"\n🔄 Executing node '{node_name}' with: {args_data}")
 
             try:
-                instance = cls(**cls_data)
+                instance:MermaidWorkflowFunction = cls(**cls_data)
                 res = ignite_func(instance, cls_data)
 
                 # Extract return values
