@@ -40,9 +40,9 @@ def mcp_to_openai_tool(tools) -> list:
         openai_tools.append(openai_tool)        
     return openai_tools
 
-async def llm(messages, tools=[]):
+async def llm(messages, instructions=None, tools=[]):
     API_KEY = os.getenv("OPENAI_API_KEY")
-    API_URL = "https://api.openai.com/v1/chat/completions"
+    API_URL = "https://api.openai.com/v1/responses"
     HEADERS = {
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json"
@@ -50,15 +50,21 @@ async def llm(messages, tools=[]):
     if type(messages) == str:
         messages = [{"role": "user", "content": messages}]
     body = {
-        "model": "gpt-4.1", "messages": messages,
+        "model": "o4-mini", "input": messages,"instructions":instructions,
+        "reasoning": {"effort": "medium","summary": "auto"},
         "tools": tools, "tool_choice": "auto"
     }
     async with aiohttp.ClientSession() as session:
         async with session.post(API_URL,
                     headers=HEADERS, json=body) as response:
-            response.raise_for_status()
             result = await response.json()
-            message = result["choices"][0]["message"]
+            print(result)
+            response.raise_for_status()
+            message = {"content":""}
+            # message = result["choices"][0]["message"]
+            if result['output'][0]['summary']:
+                message['content'] += '\n'.join([i['text'] for i in result['output'][0]['summary']])+"\n"
+            message = {"content":result['output'][1]['content'][0]['text']}
             # Return full message including potential tool calls
             if "tool_calls" in message:
                 return {
@@ -66,6 +72,7 @@ async def llm(messages, tools=[]):
                     "tool_calls": message["tool_calls"],
                 }
             return message["content"]
+
 # -------- Main --------
 if __name__ == "__main__":
     mcp_ts = asyncio.run(get_tools())
@@ -137,11 +144,8 @@ graph TD
 * Always **end with** a final node like: `C -- "{{'valid':'valid'}}" --> End`
 '''
     
-    response = asyncio.run(llm([
-            {"role": "system", "content": prompt},
-            {"role": "user",
-                "content": "Please create a new simple graph. Use image of ./tmp/input.jpg"},
-        ]))
+    response = asyncio.run(llm("Please create a new simple graph. Use image of ./tmp/input.jpg",
+                            instructions=prompt))
     print(f"🔹 Response:\n{response}\n")
     print(f"🔹 Graph:\n{engine.extract_mermaid_text(response)}\n")
     print(engine.run(engine.extract_mermaid_text(response),run_tool))

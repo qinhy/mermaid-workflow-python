@@ -61,6 +61,40 @@ def parse_mermaid(mermaid_text: str) -> dict:
             continue
         raise ValueError(f"Invalid Mermaid syntax: {l}")
     return dict(graph)
+def validate_dep_single(needs: list[str], provided: list[str]) -> tuple[bool, list[str]]:
+    missing = list(set(needs) - set(provided))
+    if missing:
+        print(f"❌ Missing required fields: {missing}")
+        return False, missing
+
+    # print("✅ All required fields are satisfied.")
+    return True, []
+
+def validate_dep_multi(needs: List[str], multi_provided: Dict[str, List[str]]) -> Tuple[bool, Dict[str, List[str]], List[str]]:
+    # Flatten provided fields
+    flat_provided = set()
+    field_sources = defaultdict(list)
+
+    for dep, fields in multi_provided.items():
+        flat_provided.update(fields)
+        for field in fields:
+            if field in needs:  # Only track relevant fields
+                field_sources[field].append(dep)
+
+    # Reuse validate_dep_single
+    is_valid, missing = validate_dep_single(needs, list(flat_provided))
+
+    # Diagnostics
+    for field, sources in field_sources.items():
+        if len(sources) > 1:
+            print(f"⚠️ Field '{field}' is provided by multiple sources: {sources}")
+        else:
+            print(f"✅ Field '{field}' is provided by: {sources[0]}")
+
+    return is_valid, dict(field_sources), missing
+
+
+
 
 class MermaidWorkflowFunction(BaseModel):
     """Base class for workflow function nodes with parameters, arguments and returns."""
@@ -297,10 +331,10 @@ class MermaidWorkflowEngine:
         cls:MermaidWorkflowFunction = self.name_to_class.get(node_name)
         return cls.get_return_fields()
 
+
     def validate_io(self) -> bool:
         print("\n🔍 Validating workflow I/O with mapping support...")
 
-        # 1. Unknown classes check
         unknown = set(self.graph) - set(self.name_to_class)
         if unknown:
             print(f"❌ Unknown classes found: {unknown}")
@@ -310,83 +344,74 @@ class MermaidWorkflowEngine:
 
         for node, meta in self.graph.items():
             deps = meta.get("prev", [])
-            node_cfg:dict = meta.get("config", {})
+            node_cfg = meta.get("config", {})
             required = set(self.node_args_fields(node))
-            required = required - set(node_cfg.get('args',{}).keys())
-            mapped_fields = set()
-            field_sources = defaultdict(list)
+            provided_fields = defaultdict(list)
 
+            # No dependencies — check config directly
             if not deps:
-                if required:
-                    print(f"❌ Node '{node}' has no dependencies but requires inputs {sorted(required)}")
+                config_args = set(node_cfg.get('args', {}).keys())
+                is_valid, missing = validate_dep_single(list(required), list(config_args))
+                if not is_valid:
+                    print(f"❌ Node '{node}' has no dependencies but requires inputs: {missing}")
                     all_valid = False
                 else:
                     print(f"⚠️ Node '{node}' has no dependencies and no required inputs.")
-                # continue to next node
                 continue
 
+            # Build provided fields from dependencies
             for dep in deps:
-                dep_rets = set(self.node_rets_fields(dep))
-                map_cfg = self.graph[dep].get("maps", {}).get(node, {})
+                dep_outputs = set(self.node_rets_fields(dep))
+                dep_map = self.graph[dep].get("maps", {}).get(node, {})
 
-                # — 1) Validate explicit mappings
-                bad_srcs = set(map_cfg) - dep_rets
-                if bad_srcs:
-                    for src in bad_srcs:
-                        print(f"❌ Field '{src}' not found in '{dep}' outputs {sorted(dep_rets)} for mapping to '{node}'")
+                # — 1. Validate explicit mappings
+                bad_srcs = set(dep_map) - dep_outputs
+                for src in bad_srcs:
+                    print(f"❌ Field '{src}' not found in outputs of '{dep}'")
                     all_valid = False
 
-                # Warn on mappings to unused dst-fields
-                bad_dsts = set(map_cfg.values()) - required
-                if bad_dsts:
-                    for dst in bad_dsts:
-                        print(f"⚠️ Mapping to '{dst}' ignored—it's not a required field of '{node}'")
-                
-                # Warn on redundant 1:1 mappings (src == dst)
-                for src, dst in map_cfg.items():
-                    if src == dst and src in required:
-                        print(f"⚠️ Redundant explicit mapping '{src}→{dst}' for '{node}' (1:1 mapping)")
+                bad_dsts = set(dep_map.values()) - required
+                for dst in bad_dsts:
+                    print(f"⚠️ Mapping to '{dst}' ignored—it's not required by '{node}'")
 
-                # — 2) Apply explicit mappings
-                used_by_dep = set()
-                for src, dst in map_cfg.items():
-                    if src in dep_rets and dst in required:
-                        mapped_fields.add(dst)
-                        field_sources[dst].append(dep)
-                        used_by_dep.add(src)
+                for src, dst in dep_map.items():
+                    if src == dst and dst in required:
+                        print(f"⚠️ Redundant explicit mapping '{src}→{dst}' for '{node}'")
 
-                # — 3) Default 1:1 mappings for anything left over
-                default_mapped = (dep_rets & required) - set(map_cfg.values())
-                for fld in default_mapped:
-                    mapped_fields.add(fld)
-                    field_sources[fld].append(dep)
-                    used_by_dep.add(fld)
+                # — 2. Apply explicit mappings
+                for src, dst in dep_map.items():
+                    if src in dep_outputs and dst in required:
+                        provided_fields[dst].append(dep)
 
-                # — 4) Warn about any outputs of dep that go completely unused
-                unused = dep_rets - used_by_dep
+                # — 3. Default 1:1 mappings
+                unmapped_defaults = (dep_outputs & required) - set(dep_map.values())
+                for field in unmapped_defaults:
+                    provided_fields[field].append(dep)
+
+                # — 4. Warn unused outputs
+                used_outputs = set(dep_map.keys()).union(unmapped_defaults)
+                unused = dep_outputs - used_outputs
                 if unused:
-                    print(f"⚠️ From '{dep}' → '{node}', these outputs are never used: {sorted(unused)}")
+                    print(f"⚠️ Outputs from '{dep}' to '{node}' never used: {sorted(unused)}")
 
-            # — 5) Check for missing required fields
-            missing = required - mapped_fields
-            if missing:
-                for fld in sorted(missing):
-                    print(f"❌ Missing field '{fld}' for node '{node}' from dependencies {deps}")
+            # — 5. Validate with validate_dep_multi
+            multi_provided = defaultdict(list)
+            for field, sources in provided_fields.items():
+                for src in sources:
+                    multi_provided[src].append(field)
+
+            is_valid, field_sources, missing = validate_dep_multi(list(required), multi_provided)
+            if not is_valid:
+                for field in missing:
+                    print(f"❌ Missing field '{field}' for node '{node}' from dependencies: {deps}")
                 all_valid = False
 
-            # — 6) Warn if any field comes from multiple deps
-            for fld, sources in field_sources.items():
-                if len(set(sources)) > 1:
-                    print(f"⚠️ Field '{fld}' for node '{node}' comes from multiple sources: {sources}")
-
-        # — 7) Final summary
         if all_valid:
             print("\n✅ Workflow validation passed: All inputs are satisfied.")
         else:
             print("\n❌ Workflow validation failed. See messages above.")
 
         return all_valid
-
 
     def run(self, mermaid_text: str, ignite_func: Optional[Callable] = None) -> Dict[str, Any]:
         if ignite_func is None:
