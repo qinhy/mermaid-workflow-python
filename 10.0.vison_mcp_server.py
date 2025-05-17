@@ -1,9 +1,15 @@
+from io import BytesIO
+import tempfile
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import List, Optional, Tuple
+
+import requests
 from MermaidWorkflowEngine import MermaidWorkflowFunction, MermaidWorkflowEngine
 from mcp.server.fastmcp import FastMCP
 from PIL import Image, ImageFilter, ImageEnhance, ImageOps
 import os
+
+from RSAjson import load_RSA
 
 mcp = FastMCP(name="ImageServer", stateless_http=True)
 
@@ -276,7 +282,7 @@ class AdjustImage(MermaidWorkflowFunction):
 
     def __init__(self, args: Arguments, para: Parameters = None, rets: Optional[Returns] = None):
         if para is None:
-            para = self.Parameters()
+            para = self.Parseters()
         super().__init__(args=args, para=para, rets=rets)
         self()
 
@@ -476,26 +482,278 @@ class ConvertImageFormat(MermaidWorkflowFunction):
             return self.rets
         except Exception as e:
             raise ValueError(f"ConvertImageFormat failed: {e}")
+        
+@mcp.tool(description="Tiles images into a grid.")
+class ImageTiler(MermaidWorkflowFunction):
+    class Parameters(BaseModel):
+        img_size_limit: int = Field(250000000, description="Maximum image size limit in pixels")
+        cols: int = Field(2, description="Number of columns for tiling images")
+        rows: int = Field(2, description="Number of rows for tiling images")
+        final_width: int = Field(800, description="Final image width in pixels")
+        final_height: int = Field(600, description="Final image height in pixels")
+        output_format: str = Field("jpg", description="Output image format (jpg, png, etc.)")
+        output_path: Optional[str] = Field('tiled_image.jpg', description="Custom output path for the tiled image")
+        
+    class Arguments(BaseModel):
+        image_sources: List[str] = Field(
+            [],
+            description="List of image URLs or local file paths, depending on the mode parameter."
+        )
+        image_slices: List[Tuple[float, float]] = Field(
+            [],
+            description="List of normalized coordinates (x,y) in range -1.0 to 1.0 that to do slicing to sub each image , with: width * x, height * y"
+        )
+        
+    class Returns(BaseModel):
+        path: Optional[str] = Field(
+            None,
+            description="Path to the saved tiled image"
+        )
 
+    para: Parameters
+    args: Arguments
+    rets: Optional[Returns] = None
+
+    def __init__(self, args: Arguments, para: Parameters, rets: Optional[Returns] = None):
+        super().__init__(args=args, para=para, rets=rets)
+        self()
+
+    def __call__(self, *args, **kwargs):
+        print("Starting image tiling process.")            
+        
+        if not self._validate_inputs():
+            return self
+            
+        images = self._process_images()
+        
+        if not images:
+            print("No valid images were processed. Exiting.")
+            self.rets = self.Returns(path="")
+            return self                
+        
+        self._create_tiled_image(images)
+        
+        return self
+
+    def _validate_inputs(self):
+        """Validate input parameters and sources."""
+        sources = self.args.image_sources
+        if not sources:
+            print("No image sources provided. Please provide at least one image source.")
+            return False
+            
+        if self.para.cols <= 0 or self.para.rows <= 0:
+            print("Columns and rows must be positive integers.")
+            return False
+            
+        if self.para.final_width <= 0 or self.para.final_height <= 0:
+            print("Final width and height must be positive integers.")
+            return False
+            
+        return True
+        
+    def _process_images(self):
+        """Process all image sources and return a list of processed images."""
+        sources = self.args.image_sources
+        cols = self.para.cols
+        rows = self.para.rows
+        final_width = self.para.final_width
+        final_height = self.para.final_height
+        
+        # Calculate dimensions for each cell in the grid
+        cell_width = final_width // cols
+        cell_height = final_height // rows
+        print(
+            f"Tiling parameters: {cols} cols x {rows} rows; Final size: {final_width}x{final_height}; Each cell: {cell_width}x{cell_height}."
+        )
+        
+        # List to store processed images
+        images = []
+        for idx, source in enumerate(sources):            
+            try:
+                img = self._load_image(source, idx, len(sources))
+                if img is None:
+                    continue
+                
+                # Apply image slicing if specified
+                img = self._apply_slicing(img, idx)
+                
+                # Resize image to fit cell dimensions
+                original_size = img.size
+                img = img.resize((cell_width, cell_height), Image.LANCZOS)
+                print(
+                    f"Resized image {idx+1} from {original_size} to {img.size}."
+                )
+                
+                images.append(img)
+            except Exception as e:
+                print(f"Unexpected error processing image at {source}: {str(e)}")
+                continue
+                
+        return images
+        
+    def _load_image(self, source, idx, total_sources):
+        """Load an image from a URL or local file path."""
+        try:
+            # Set PIL's maximum image size limit to prevent decompression bomb attacks
+            Image.MAX_IMAGE_PIXELS = self.para.img_size_limit
+
+            if source.startswith(("http://", "https://")):
+                print(
+                    f"Downloading image {idx + 1}/{total_sources} from {source}."
+                )
+                response = requests.get(source, timeout=10)
+                response.raise_for_status()
+                img_data = BytesIO(response.content)
+                
+                img = Image.open(img_data)
+                print(
+                    f"Successfully downloaded image {idx+1}: {img.format}, size: {img.size}, mode: {img.mode}"
+                )
+            else:
+                if not os.path.exists(source):
+                    raise FileNotFoundError(f"Image file not found: {source}")
+                print(
+                    f"Opening local image {idx + 1}/{total_sources} from {source}."
+                )
+                    
+                img = Image.open(source)
+                print(
+                    f"Successfully opened image {idx+1}: {img.format}, size: {img.size}, mode: {img.mode}"
+                )
+            
+            # Convert image to RGB if necessary
+            if img.mode != 'RGB':
+                print(
+                    f"Converting image {idx+1} from {img.mode} to RGB mode."
+                )
+                img = img.convert('RGB')
+                
+            return img
+        except requests.exceptions.RequestException as e:
+            print(f"Network error while downloading image {idx+1} from {source}: {str(e)}")
+        except FileNotFoundError as e:
+            print(f"{str(e)}")
+        except Image.UnidentifiedImageError:
+            print(f"Could not identify image {idx+1} format for {source}")
+        except Image.DecompressionBombError as e:
+            print(f"Image {idx+1} from {source} is too large: {str(e)}")
+        
+        return None
+        
+    def _apply_slicing(self, img, idx):
+        """Apply slicing to an image if specified in the model args."""
+        slices = self.args.image_slices
+        if not slices or idx >= len(slices) or not slices[idx] or len(slices[idx])!=2:
+            return img
+            
+        rx, ry = slices[idx]
+        width, height = img.size
+        
+        # Calculate target dimensions based on normalized coordinates
+        target_width = int(abs(rx) * width)
+        target_height = int(abs(ry) * height)
+        
+        # Calculate starting positions
+        start_x = 0 if rx > 0 else width - target_width
+        start_y = 0 if ry > 0 else height - target_height
+        
+        # Crop the image
+        cropped_img = img.crop((start_x, start_y, start_x + target_width, start_y + target_height))
+        print(
+            f"Applied slicing to image {idx+1}: coordinates ({rx}, {ry}), resulting size: {cropped_img.size}"
+        )
+        
+        return cropped_img
+        
+    def _create_tiled_image(self, images):
+        """Create and save the final tiled image."""
+        cols = self.para.cols
+        rows = self.para.rows
+        final_width = self.para.final_width
+        final_height = self.para.final_height
+        cell_width = final_width // cols
+        cell_height = final_height // rows
+        
+        # Create a blank canvas for the final tiled image
+        tiled_image = Image.new('RGB', (final_width, final_height))
+        img_index = 0
+        
+        print(f"Tiling {len(images)} images into a {rows}x{cols} grid.")
+
+        for row in range(rows):
+            for col in range(cols):
+                if img_index >= len(images):
+                    break  # No more images to paste
+                x = col * cell_width
+                y = row * cell_height
+                tiled_image.paste(images[img_index], (x, y))
+                img_index += 1
+                print(
+                    f"Placed image {img_index} at grid position ({row}, {col}), at array position ({y}, {x})"
+                )
+
+        self._save_tiled_image(tiled_image)
+        
+    def _save_tiled_image(self, tiled_image):
+        """Save the tiled image to disk."""
+        try:
+            # Determine output path
+            if self.para.output_path:
+                output_path = self.para.output_path
+                # Ensure directory exists
+                os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+            else:
+                output_format = self.para.output_format.lower()
+                if not output_format.startswith('.'):
+                    output_format = f".{output_format}"
+                
+                # Create a temporary file with the specified extension
+                with tempfile.NamedTemporaryFile(suffix=output_format, delete=False) as tmp:
+                    output_path = tmp.name
+            
+            # Save the image
+            tiled_image.save(output_path)
+            print(
+                f"Tiled image saved at {output_path}. Final size: {tiled_image.size}"
+            )
+            self.rets = self.Returns(path=output_path)
+        except Exception as e:
+            print(f"Error saving tiled image: {str(e)}")
+            self.rets = self.Returns(path="")
 
 # -------- Main --------
 if __name__ == "__main__":
-    mcp.run(transport="stdio")
+    # mcp.run(transport="stdio")
 
-#     engine = MermaidWorkflowEngine(model_registry = {
-#         'LoadImage':LoadImage,
-#         'ResizeImage':ResizeImage,
-#         'RotateImage':RotateImage,
-#         'GrayscaleImage':GrayscaleImage,
-#         'CropImage':CropImage,
-#         'FlipImage':FlipImage,
-#         'BlurImage':BlurImage,
-#         'AdjustImage':AdjustImage,
-#         'FilterImage':FilterImage,
-#         'WatermarkImage':WatermarkImage,
-#         'ConvertImageFormat':ConvertImageFormat,
-#         'EndImage':EndImage,
-#             })
+    engine = MermaidWorkflowEngine(model_registry = {
+        'LoadImage':LoadImage,
+        'ResizeImage':ResizeImage,
+        'RotateImage':RotateImage,
+        'GrayscaleImage':GrayscaleImage,
+        'CropImage':CropImage,
+        'FlipImage':FlipImage,
+        'BlurImage':BlurImage,
+        'AdjustImage':AdjustImage,
+        'FilterImage':FilterImage,
+        'WatermarkImage':WatermarkImage,
+        'ConvertImageFormat':ConvertImageFormat,
+        'ImageTiler':ImageTiler,
+        'EndImage':EndImage,
+            })
+    
+    itc = load_RSA("./tmp/image_tiler.json","./tmp/private_key.pem")    
+    print(f"""
+graph TD
+    ImageTiler["{{ {itc} }}"]
+    ImageTiler --> EndImage
+""")
+    
+    results = engine.run(f"""
+graph TD
+    ImageTiler["{{ {itc} }}"]
+    ImageTiler --> EndImage
+""",lambda obj:obj)
     
 #     results = engine.run("""
 # graph TD

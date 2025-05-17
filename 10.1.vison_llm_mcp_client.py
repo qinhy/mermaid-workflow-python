@@ -84,7 +84,7 @@ if __name__ == "__main__":
 
     test_graph = """
 graph TD
-    LoadImage["{'para': {'path': './input.jpg'}}"]
+    LoadImage["{'para': {'path': './tmp/input.jpg'}}"]
     ResizeImage["{'para': {'width': 512, 'height': 512}}"]
     CropImage["{'para': {'left': 50, 'upper': 50, 'right': 462, 'lower': 462}}"]
     BlurImage["{'para': {'radius': 3}}"]
@@ -140,7 +140,7 @@ graph TD
     response = asyncio.run(llm([
             {"role": "system", "content": prompt},
             {"role": "user",
-                "content": "Please create a new simple graph. Use image of ./input.jpg"},
+                "content": "Please create a new simple graph. Use image of ./tmp/input.jpg"},
         ]))
     print(f"🔹 Response:\n{response}\n")
     print(f"🔹 Graph:\n{engine.extract_mermaid_text(response)}\n")
