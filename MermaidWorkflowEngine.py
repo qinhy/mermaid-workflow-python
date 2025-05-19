@@ -16,7 +16,29 @@ import json
 import re
 
 
-def parse_mermaid(mermaid_text: str) -> dict:
+def parse_mermaid(mermaid_text: str="""
+graph TD
+    LoadImage["{'para': {'path': './tmp/input.jpg'}}"]
+    BlurImage["{'para': {'radius': 2}}"]
+    BlurImage_2["{'para': {'radius': 5}}"]
+    ResizeImage_01["{'para': {'width': 512, 'height': 512}}"]
+    ResizeImage["{'para': {'width': 1024, 'height': 1024}}"]
+
+    LoadImage -- "{'path':'path'}" --> ResizeImage_01
+    ResizeImage_01 --> BlurImage
+    BlurImage --> BlurImage_2
+    BlurImage_2 --> ResizeImage
+""") -> dict:
+    """
+### 📌 Mermaid Graph Protocol (for beginners):
+
+* `graph TD` → Start of a top-down Mermaid flowchart
+* `NodeName[_optionalID]["{{...}}"]` (e.g., `ResizeImage_01`) → Define a node with initialization parameters in JSON-like format
+* The initialization parameters **must not contain mapping information** — only raw valid values (e.g., numbers, strings, booleans)
+* `A --> B` → Connect node A to node B (no field mapping)
+* `A -- "{{'x':'y'}}" --> B` → Map output field `'x'` from A to input field `'y'` of B
+* Use **valid field names** from each tool's input/output schema
+"""
     lines = [l.strip() for l in mermaid_text.strip().splitlines()]
     lines = [l for l in lines if ('["{' in l) or ('--' in l)]
     lines = [l for l in lines if '["{}"]' not in l]
@@ -61,6 +83,7 @@ def parse_mermaid(mermaid_text: str) -> dict:
             continue
         raise ValueError(f"Invalid Mermaid syntax: {l}")
     return dict(graph)
+
 def validate_dep_single(needs: list[str], provided: list[str]) -> tuple[bool, list[str]]:
     missing = list(set(needs) - set(provided))
     if missing:
@@ -92,8 +115,6 @@ def validate_dep_multi(needs: List[str], multi_provided: Dict[str, List[str]]) -
             print(f"✅ Field '{field}' is provided by: {sources[0]}")
 
     return is_valid, dict(field_sources), missing
-
-
 
 
 class MermaidWorkflowFunction(BaseModel):
@@ -323,19 +344,21 @@ class MermaidWorkflowEngine:
 
         return args_data
     
-    def node_args_fields(self, node_name: str):
+    def node_get(self, node_name: str):
+        node_name = node_name.split('_')[0]
         cls:MermaidWorkflowFunction = self.name_to_class.get(node_name)
-        return cls.get_argument_fields()
+        return cls
+    
+    def node_args_fields(self, node_name: str):
+        return self.node_get(node_name).get_argument_fields()
 
     def node_rets_fields(self, node_name: str):
-        cls:MermaidWorkflowFunction = self.name_to_class.get(node_name)
-        return cls.get_return_fields()
-
+        return self.node_get(node_name).get_return_fields()
 
     def validate_io(self) -> bool:
         print("\n🔍 Validating workflow I/O with mapping support...")
 
-        unknown = set(self.graph) - set(self.name_to_class)
+        unknown = set([n.split("_")[0] for n in list(self.graph.keys())]) - set(self.name_to_class)
         if unknown:
             print(f"❌ Unknown classes found: {unknown}")
             return False
@@ -430,7 +453,7 @@ class MermaidWorkflowEngine:
 
         for node_name in execution_order:
             self.results[node_name] = {}
-            cls:MermaidWorkflowFunction = self.name_to_class[node_name]
+            cls:MermaidWorkflowFunction = self.node_get(node_name)
 
             # Collect inputs from dependencies
             args_data = {}

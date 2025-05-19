@@ -137,11 +137,11 @@ graph TD
 ### 📌 Mermaid Graph Protocol (for beginners):
 
 * `graph TD` → Start of a top-down Mermaid flowchart
-* `Node_Name["{{...}}"]` → Define a node with initialization parameters (in JSON-like format)
+* `NodeName[_optionalID]["{{...}}"]` (e.g., `ResizeImage_01`) → Define a node with initialization parameters in JSON-like format
+* The initialization parameters **must not contain mapping information** — only raw values (e.g., numbers, strings, booleans)
 * `A --> B` → Connect node A to node B (no field mapping)
-* `A -- "{{'x':'y'}}" --> B` → Map output `'x'` from A to input `'y'` of B
+* `A -- "{{'x':'y'}}" --> B` → Map output field `'x'` from A to input field `'y'` of B
 * Use **valid field names** from each tool's input/output schema
-* Always **end with** a final node like: `C -- "{{'valid':'valid'}}" --> End`
 '''
     
     response = asyncio.run(llm("Please create a new simple graph. Use image of ./tmp/input.jpg",

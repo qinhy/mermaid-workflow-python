@@ -747,21 +747,21 @@ class ImageTiler(MermaidWorkflowFunction):
 if __name__ == "__main__":
     mcp.run(transport="stdio")
 
-#     engine = MermaidWorkflowEngine(model_registry = {
-#         'LoadImage':LoadImage,
-#         'ResizeImage':ResizeImage,
-#         'RotateImage':RotateImage,
-#         'GrayscaleImage':GrayscaleImage,
-#         'CropImage':CropImage,
-#         'FlipImage':FlipImage,
-#         'BlurImage':BlurImage,
-#         'AdjustImage':AdjustImage,
-#         'FilterImage':FilterImage,
-#         'WatermarkImage':WatermarkImage,
-#         'ConvertImageFormat':ConvertImageFormat,
-#         'ImageTiler':ImageTiler,
-#         'EndImage':EndImage,
-#             })
+    # engine = MermaidWorkflowEngine(model_registry = {
+    #     'LoadImage':LoadImage,
+    #     'ResizeImage':ResizeImage,
+    #     'RotateImage':RotateImage,
+    #     'GrayscaleImage':GrayscaleImage,
+    #     'CropImage':CropImage,
+    #     'FlipImage':FlipImage,
+    #     'BlurImage':BlurImage,
+    #     'AdjustImage':AdjustImage,
+    #     'FilterImage':FilterImage,
+    #     'WatermarkImage':WatermarkImage,
+    #     'ConvertImageFormat':ConvertImageFormat,
+    #     'ImageTiler':ImageTiler,
+    #     'EndImage':EndImage,
+    #         })
     
 #     itc = load_RSA("./tmp/image_tiler.json","./tmp/private_key.pem")    
 #     aic = {'para':{'brightness':4.5,'contrast':4.5,'saturation':1.0}}
@@ -777,7 +777,7 @@ if __name__ == "__main__":
     
 #     results = engine.run("""
 # graph TD
-#     LoadImage["{'para': {'path': './input.jpg'}}"]
+#     LoadImage["{'para': {'path': './tmp/input.jpg'}}"]
 #     ResizeImage["{'para': {'width': 512, 'height': 512}}"]
 #     CropImage["{'para': {'left': 50, 'upper': 50, 'right': 462, 'lower': 462}}"]
 #     BlurImage["{'para': {'radius': 3}}"]
@@ -800,4 +800,19 @@ if __name__ == "__main__":
 #     WatermarkImage -- "{'path':'path'}" --> FilterImage
 #     FilterImage -- "{'path':'path'}" --> ConvertImageFormat
 #     ConvertImageFormat -- "{'path':'path'}" --> EndImage
+# """)
+
+#     results = engine.run("""
+# graph TD
+#     LoadImage["{'para': {'path': './tmp/input.jpg'}}"]
+#     BlurImage["{'para': {'radius': 2}}"]
+#     BlurImage_2["{'para': {'radius': 5}}"]
+#     ResizeImage_01["{'para': {'width': 512, 'height': 512}}"]
+#     ResizeImage["{'para': {'width': 1024, 'height': 1024}}"]
+
+#     LoadImage -- "{'path':'path'}" --> ResizeImage_01
+#     ResizeImage_01 --> BlurImage
+#     BlurImage --> BlurImage_2
+#     BlurImage_2 --> ResizeImage
+#     ResizeImage --> EndImage
 # """)
