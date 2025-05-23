@@ -28,17 +28,16 @@ graph TD
     ResizeImage_01 --> BlurImage
     BlurImage --> BlurImage_2
     BlurImage_2 --> ResizeImage
+                  
+%% ### 📌 Mermaid Graph Protocol (for beginners):
+%% * `graph TD` → Start of a top-down Mermaid flowchart
+%% * `NodeName[_optionalID]["{{...}}"]` (e.g., `ResizeImage_01`) → Define a node with initialization parameters in JSON-like format
+%% * The initialization parameters **must not contain mapping information** — only raw valid values (e.g., numbers, strings, booleans)
+%% * `A --> B` → Connect node A to node B (no field mapping)
+%% * `A -- "{{'x':'y'}}" --> B` → Map output field `'x'` from A to input field `'y'` of B
+%% * Use **valid field names** from each tool's input/output schema
 """) -> dict:
-    """
-### 📌 Mermaid Graph Protocol (for beginners):
-
-* `graph TD` → Start of a top-down Mermaid flowchart
-* `NodeName[_optionalID]["{{...}}"]` (e.g., `ResizeImage_01`) → Define a node with initialization parameters in JSON-like format
-* The initialization parameters **must not contain mapping information** — only raw valid values (e.g., numbers, strings, booleans)
-* `A --> B` → Connect node A to node B (no field mapping)
-* `A -- "{{'x':'y'}}" --> B` → Map output field `'x'` from A to input field `'y'` of B
-* Use **valid field names** from each tool's input/output schema
-"""
+    
     lines = [l.strip() for l in mermaid_text.strip().splitlines()]
     lines = [l for l in lines if ('["{' in l) or ('--' in l)]
     lines = [l for l in lines if '["{}"]' not in l]
