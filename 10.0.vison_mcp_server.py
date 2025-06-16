@@ -2,7 +2,7 @@ from io import BytesIO
 import tempfile
 import numpy as np
 from pydantic import BaseModel, Field
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Type
 
 import requests
 from MermaidWorkflowEngine import MermaidWorkflowFunction, MermaidWorkflowEngine
@@ -15,8 +15,9 @@ from RSAjson import load_RSA
 mcp = FastMCP(name="ImageServer", stateless_http=True)
 
 
-@mcp.tool(description="Validates if the input image path exists.")
 class LoadImage(MermaidWorkflowFunction):
+    description:str = Field("Validates if the input image path exists.")
+
     class Parameters(BaseModel):
         path: str = Field(..., description="Path to the image file")
 
@@ -42,8 +43,9 @@ class LoadImage(MermaidWorkflowFunction):
             raise ValueError(f"LoadImage failed: {e}")
 
 
-@mcp.tool(description="Resize an image to given width and height.")
 class ResizeImage(MermaidWorkflowFunction):
+    description:str = Field("Resize an image to given width and height.")
+
     class Parameters(BaseModel):
         width: int
         height: int
@@ -76,8 +78,9 @@ class ResizeImage(MermaidWorkflowFunction):
             raise ValueError(f"ResizeImage failed: {e}")
 
 
-@mcp.tool(description="Rotate an image by a given angle.")
 class RotateImage(MermaidWorkflowFunction):
+    description:str = Field("Rotate an image by a given angle.")
+
     class Parameters(BaseModel):
         angle: int
 
@@ -108,8 +111,9 @@ class RotateImage(MermaidWorkflowFunction):
         except Exception as e:
             raise ValueError(f"RotateImage failed: {e}")
 
-@mcp.tool(description="Convert an image to 8-bit grayscale (ImageJ style).")
 class GrayscaleImage(MermaidWorkflowFunction):
+    description:str = Field("Convert an image to 8-bit grayscale (ImageJ style).")
+
     class Arguments(BaseModel):
         path: str
 
@@ -159,8 +163,9 @@ class GrayscaleImage(MermaidWorkflowFunction):
             raise ValueError(f"GrayscaleImage failed: {e}")
 
 
-@mcp.tool(description="Crop the image to a specific box (left, upper, right, lower).")
 class CropImage(MermaidWorkflowFunction):
+    description:str = Field("Crop the image to a specific box (left, upper, right, lower).")
+
     class Parameters(BaseModel):
         left: int
         upper: int
@@ -195,8 +200,9 @@ class CropImage(MermaidWorkflowFunction):
             raise ValueError(f"CropImage failed: {e}")
 
 
-@mcp.tool(description="Flip an image horizontally or vertically.")
 class FlipImage(MermaidWorkflowFunction):
+    description:str = Field("Flip an image horizontally or vertically.")
+
     class Parameters(BaseModel):
         mode: str = Field(..., description="'horizontal' or 'vertical'")
 
@@ -233,8 +239,9 @@ class FlipImage(MermaidWorkflowFunction):
             raise ValueError(f"FlipImage failed: {e}")
 
 
-@mcp.tool(description="Ends the workflow and reports image output path.")
 class EndImage(MermaidWorkflowFunction):
+    description:str = Field("Ends the workflow and reports image output path.")
+
     class Arguments(BaseModel):
         path: str = Field(..., description="Final image path")
 
@@ -253,8 +260,9 @@ class EndImage(MermaidWorkflowFunction):
             raise ValueError(f"EndImage failed: {e}")
 
 
-@mcp.tool(description="Apply a blur filter to an image.")
 class BlurImage(MermaidWorkflowFunction):
+    description:str = Field("Apply a blur filter to an image.")
+
     class Parameters(BaseModel):
         radius: float = Field(..., description="Blur radius, higher values create more blur")
 
@@ -286,8 +294,9 @@ class BlurImage(MermaidWorkflowFunction):
             raise ValueError(f"BlurImage failed: {e}")
 
 
-@mcp.tool(description="Adjust the brightness, contrast, or saturation of an image.")
 class AdjustImage(MermaidWorkflowFunction):
+    description:str = Field("Adjust the brightness, contrast, or saturation of an image.")
+
     class Parameters(BaseModel):
         brightness: float = Field(..., description="Brightness factor (0.0-2.0, 1.0 is original)")
         contrast: float = Field(..., description="Contrast factor (0.0-2.0, 1.0 is original)")
@@ -336,8 +345,9 @@ class AdjustImage(MermaidWorkflowFunction):
             raise ValueError(f"AdjustImage failed: {e}")
 
 
-@mcp.tool(description="Apply various filters to an image.")
 class FilterImage(MermaidWorkflowFunction):
+    description:str = Field("Apply various filters to an image.")
+
     class Parameters(BaseModel):
         filter_type: str = Field(..., description="Filter type: 'emboss', 'find_edges', 'contour', 'sharpen', or 'smooth'")
 
@@ -381,8 +391,9 @@ class FilterImage(MermaidWorkflowFunction):
             raise ValueError(f"FilterImage failed: {e}")
 
 
-@mcp.tool(description="Add a watermark text to an image.")
 class WatermarkImage(MermaidWorkflowFunction):
+    description:str = Field("Add a watermark text to an image.")
+
     class Parameters(BaseModel):
         text: str = Field(..., description="Text to add as watermark")
         position: str = Field(..., description="Position: 'center', 'top_left', 'top_right', 'bottom_left', 'bottom_right'")
@@ -454,8 +465,9 @@ class WatermarkImage(MermaidWorkflowFunction):
             raise ValueError(f"WatermarkImage failed: {e}")
 
 
-@mcp.tool(description="Convert an image to a different format.")
 class ConvertImageFormat(MermaidWorkflowFunction):
+    description:str = Field("Convert an image to a different format.")
+
     class Parameters(BaseModel):
         format: str = Field(..., description="Target format: 'jpg', 'png', 'bmp', 'gif', 'webp'")
         quality: int = Field(..., description="Quality for lossy formats (1-100)")
@@ -504,8 +516,9 @@ class ConvertImageFormat(MermaidWorkflowFunction):
         except Exception as e:
             raise ValueError(f"ConvertImageFormat failed: {e}")
         
-@mcp.tool(description="Tiles images into a grid.")
 class ImageTiler(MermaidWorkflowFunction):
+    description:str = Field("Tiles images into a grid.")
+
     class Parameters(BaseModel):
         img_size_limit: int = Field(250000000, description="Maximum image size limit in pixels")
         cols: int = Field(2, description="Number of columns for tiling images")
@@ -745,6 +758,24 @@ class ImageTiler(MermaidWorkflowFunction):
 
 # -------- Main --------
 if __name__ == "__main__":
+    def add_tool(t:Type[MermaidWorkflowFunction]):        
+        mcp.add_tool(t, 
+        description=t.model_fields['description'].default)
+
+    add_tool(LoadImage)
+    add_tool(ResizeImage)
+    add_tool(RotateImage)
+    add_tool(GrayscaleImage)
+    add_tool(CropImage)
+    add_tool(FlipImage)
+    add_tool(EndImage)
+    add_tool(BlurImage)
+    add_tool(AdjustImage)
+    add_tool(FilterImage)
+    add_tool(WatermarkImage)
+    add_tool(ConvertImageFormat)
+    add_tool(ImageTiler)
+
     mcp.run(transport="stdio")
 
     # engine = MermaidWorkflowEngine(model_registry = {
