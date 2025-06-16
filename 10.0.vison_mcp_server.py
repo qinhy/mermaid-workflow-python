@@ -18,22 +18,22 @@ mcp = FastMCP(name="ImageServer", stateless_http=True)
 class LoadImage(MermaidWorkflowFunction):
     description:str = Field("Validates if the input image path exists.")
 
-    class Parameters(BaseModel):
+    class Parameter(BaseModel):
         path: str = Field(..., description="Path to the image file")
 
-    class Returns(BaseModel):
+    class Returness(BaseModel):
         exists: bool = Field(..., description="True if file exists")
         path: str = Field(..., description="Image path")
 
-    para: Parameters
-    rets: Optional[Returns] = None
+    para: Parameter
+    rets: Optional[Returness] = None
 
     def __call__(self):
         try:
             exists = os.path.exists(self.para.path)
             if not exists:
                 raise FileNotFoundError(f"File does not exist: {self.para.path}")
-            self.rets = self.Returns(exists=exists, path=self.para.path)
+            self.rets = self.Returness(exists=exists, path=self.para.path)
             return self.rets
         except Exception as e:
             raise ValueError(f"LoadImage failed: {e}")
@@ -42,19 +42,19 @@ class LoadImage(MermaidWorkflowFunction):
 class ResizeImage(MermaidWorkflowFunction):
     description:str = Field("Resize an image to given width and height.")
 
-    class Parameters(BaseModel):
+    class Parameter(BaseModel):
         width: int
         height: int
 
     class Arguments(BaseModel):
         path: str
 
-    class Returns(BaseModel):
+    class Returness(BaseModel):
         path: str
 
-    para: Parameters
+    para: Parameter
     args: Arguments
-    rets: Optional[Returns] = None
+    rets: Optional[Returness] = None
 
     def __call__(self):
         try:
@@ -64,7 +64,7 @@ class ResizeImage(MermaidWorkflowFunction):
             img = img.resize((self.para.width, self.para.height))
             output_path = f"{os.path.splitext(self.args.path)[0]}_resized.jpg"
             img.save(output_path)
-            self.rets = self.Returns(path=output_path)
+            self.rets = self.Returness(path=output_path)
             return self.rets
         except Exception as e:
             raise ValueError(f"ResizeImage failed: {e}")
@@ -73,18 +73,18 @@ class ResizeImage(MermaidWorkflowFunction):
 class RotateImage(MermaidWorkflowFunction):
     description:str = Field("Rotate an image by a given angle.")
 
-    class Parameters(BaseModel):
+    class Parameter(BaseModel):
         angle: int
 
     class Arguments(BaseModel):
         path: str
 
-    class Returns(BaseModel):
+    class Returness(BaseModel):
         path: str
 
-    para: Parameters
+    para: Parameter
     args: Arguments
-    rets: Optional[Returns] = None
+    rets: Optional[Returness] = None
 
     def __call__(self):
         try:
@@ -94,7 +94,7 @@ class RotateImage(MermaidWorkflowFunction):
             img = img.rotate(self.para.angle)
             output_path = f"{os.path.splitext(self.args.path)[0]}_rotated.jpg"
             img.save(output_path)
-            self.rets = self.Returns(path=output_path)
+            self.rets = self.Returness(path=output_path)
             return self.rets
         except Exception as e:
             raise ValueError(f"RotateImage failed: {e}")
@@ -105,11 +105,11 @@ class GrayscaleImage(MermaidWorkflowFunction):
     class Arguments(BaseModel):
         path: str
 
-    class Returns(BaseModel):
+    class Returness(BaseModel):
         path: str
 
     args: Arguments
-    rets: Optional[Returns] = None
+    rets: Optional[Returness] = None
 
     def __call__(self):
         try:
@@ -140,7 +140,7 @@ class GrayscaleImage(MermaidWorkflowFunction):
             output_path = f"{os.path.splitext(self.args.path)[0]}_gray.jpg"
             img_8bit.save(output_path)
 
-            self.rets = self.Returns(path=output_path)
+            self.rets = self.Returness(path=output_path)
             return self.rets
 
         except Exception as e:
@@ -150,7 +150,7 @@ class GrayscaleImage(MermaidWorkflowFunction):
 class CropImage(MermaidWorkflowFunction):
     description:str = Field("Crop the image to a specific box (left, upper, right, lower).")
 
-    class Parameters(BaseModel):
+    class Parameter(BaseModel):
         left: int
         upper: int
         right: int
@@ -159,13 +159,13 @@ class CropImage(MermaidWorkflowFunction):
     class Arguments(BaseModel):
         path: str
 
-    class Returns(BaseModel):
+    class Returness(BaseModel):
         path: str
 
-    para: Parameters
+    para: Parameter
     args: Arguments
-    rets: Optional[Returns]
-
+    rets: Optional[Returness] = None
+ 
     def __call__(self):
         try:
             if not os.path.exists(self.args.path):
@@ -174,7 +174,7 @@ class CropImage(MermaidWorkflowFunction):
             img = img.crop((self.para.left, self.para.upper, self.para.right, self.para.lower))
             output_path = f"{os.path.splitext(self.args.path)[0]}_cropped.jpg"
             img.save(output_path)
-            self.rets = self.Returns(path=output_path)
+            self.rets = self.Returness(path=output_path)
             return self.rets
         except Exception as e:
             raise ValueError(f"CropImage failed: {e}")
@@ -183,18 +183,18 @@ class CropImage(MermaidWorkflowFunction):
 class FlipImage(MermaidWorkflowFunction):
     description:str = Field("Flip an image horizontally or vertically.")
 
-    class Parameters(BaseModel):
+    class Parameter(BaseModel):
         mode: str = Field(..., description="'horizontal' or 'vertical'")
 
     class Arguments(BaseModel):
         path: str
 
-    class Returns(BaseModel):
+    class Returness(BaseModel):
         path: str
 
-    para: Parameters
+    para: Parameter
     args: Arguments
-    rets: Optional[Returns]
+    rets: Optional[Returness] = None
 
     def __call__(self):
         try:
@@ -209,7 +209,7 @@ class FlipImage(MermaidWorkflowFunction):
                 raise ValueError("Invalid mode for FlipImage. Use 'horizontal' or 'vertical'.")
             output_path = f"{os.path.splitext(self.args.path)[0]}_flipped.jpg"
             img.save(output_path)
-            self.rets = self.Returns(path=output_path)
+            self.rets = self.Returness(path=output_path)
             return self.rets
         except Exception as e:
             raise ValueError(f"FlipImage failed: {e}")
@@ -235,18 +235,18 @@ class EndImage(MermaidWorkflowFunction):
 class BlurImage(MermaidWorkflowFunction):
     description:str = Field("Apply a blur filter to an image.")
 
-    class Parameters(BaseModel):
+    class Parameter(BaseModel):
         radius: float = Field(..., description="Blur radius, higher values create more blur")
 
     class Arguments(BaseModel):
         path: str
 
-    class Returns(BaseModel):
+    class Returness(BaseModel):
         path: str
 
-    para: Parameters
+    para: Parameter
     args: Arguments
-    rets: Optional[Returns] = None
+    rets: Optional[Returness] = None
 
     def __call__(self):
         try:
@@ -256,7 +256,7 @@ class BlurImage(MermaidWorkflowFunction):
             img = img.filter(ImageFilter.GaussianBlur(radius=self.para.radius))
             output_path = f"{os.path.splitext(self.args.path)[0]}_blurred.jpg"
             img.save(output_path)
-            self.rets = self.Returns(path=output_path)
+            self.rets = self.Returness(path=output_path)
             return self.rets
         except Exception as e:
             raise ValueError(f"BlurImage failed: {e}")
@@ -265,7 +265,7 @@ class BlurImage(MermaidWorkflowFunction):
 class AdjustImage(MermaidWorkflowFunction):
     description:str = Field("Adjust the brightness, contrast, or saturation of an image.")
 
-    class Parameters(BaseModel):
+    class Parameter(BaseModel):
         brightness: float = Field(..., description="Brightness factor (0.0-2.0, 1.0 is original)")
         contrast: float = Field(..., description="Contrast factor (0.0-2.0, 1.0 is original)")
         saturation: float = Field(..., description="Saturation factor (0.0-2.0, 1.0 is original)")
@@ -273,12 +273,12 @@ class AdjustImage(MermaidWorkflowFunction):
     class Arguments(BaseModel):
         path: str
 
-    class Returns(BaseModel):
+    class Returness(BaseModel):
         path: str
 
-    para: Parameters
+    para: Parameter
     args: Arguments
-    rets: Optional[Returns] = None
+    rets: Optional[Returness] = None
 
     def __call__(self):
         try:
@@ -303,7 +303,7 @@ class AdjustImage(MermaidWorkflowFunction):
                 
             output_path = f"{os.path.splitext(self.args.path)[0]}_adjusted.jpg"
             img.save(output_path)
-            self.rets = self.Returns(path=output_path)
+            self.rets = self.Returness(path=output_path)
             return self.rets
         except Exception as e:
             raise ValueError(f"AdjustImage failed: {e}")
@@ -312,18 +312,18 @@ class AdjustImage(MermaidWorkflowFunction):
 class FilterImage(MermaidWorkflowFunction):
     description:str = Field("Apply various filters to an image.")
 
-    class Parameters(BaseModel):
+    class Parameter(BaseModel):
         filter_type: str = Field(..., description="Filter type: 'emboss', 'find_edges', 'contour', 'sharpen', or 'smooth'")
 
     class Arguments(BaseModel):
         path: str
 
-    class Returns(BaseModel):
+    class Returness(BaseModel):
         path: str
 
-    para: Parameters
+    para: Parameter
     args: Arguments
-    rets: Optional[Returns] = None
+    rets: Optional[Returness] = None
 
     def __call__(self):
         try:
@@ -345,7 +345,7 @@ class FilterImage(MermaidWorkflowFunction):
             img = img.filter(filter_map[self.para.filter_type])
             output_path = f"{os.path.splitext(self.args.path)[0]}_{self.para.filter_type}.jpg"
             img.save(output_path)
-            self.rets = self.Returns(path=output_path)
+            self.rets = self.Returness(path=output_path)
             return self.rets
         except Exception as e:
             raise ValueError(f"FilterImage failed: {e}")
@@ -354,7 +354,7 @@ class FilterImage(MermaidWorkflowFunction):
 class WatermarkImage(MermaidWorkflowFunction):
     description:str = Field("Add a watermark text to an image.")
 
-    class Parameters(BaseModel):
+    class Parameter(BaseModel):
         text: str = Field(..., description="Text to add as watermark")
         position: str = Field(..., description="Position: 'center', 'top_left', 'top_right', 'bottom_left', 'bottom_right'")
         opacity: float = Field(..., description="Opacity of watermark (0.0-1.0)")
@@ -362,12 +362,12 @@ class WatermarkImage(MermaidWorkflowFunction):
     class Arguments(BaseModel):
         path: str
 
-    class Returns(BaseModel):
+    class Returness(BaseModel):
         path: str
 
-    para: Parameters
+    para: Parameter
     args: Arguments
-    rets: Optional[Returns] = None
+    rets: Optional[Returness] = None
 
     def __call__(self):
         try:
@@ -416,7 +416,7 @@ class WatermarkImage(MermaidWorkflowFunction):
             
             output_path = f"{os.path.splitext(self.args.path)[0]}_watermarked.jpg"
             watermarked.save(output_path)
-            self.rets = self.Returns(path=output_path)
+            self.rets = self.Returness(path=output_path)
             return self.rets
         except Exception as e:
             raise ValueError(f"WatermarkImage failed: {e}")
@@ -425,19 +425,19 @@ class WatermarkImage(MermaidWorkflowFunction):
 class ConvertImageFormat(MermaidWorkflowFunction):
     description:str = Field("Convert an image to a different format.")
 
-    class Parameters(BaseModel):
+    class Parameter(BaseModel):
         format: str = Field(..., description="Target format: 'jpg', 'png', 'bmp', 'gif', 'webp'")
         quality: int = Field(..., description="Quality for lossy formats (1-100)")
 
     class Arguments(BaseModel):
         path: str
 
-    class Returns(BaseModel):
+    class Returness(BaseModel):
         path: str
 
-    para: Parameters
+    para: Parameter
     args: Arguments
-    rets: Optional[Returns] = None
+    rets: Optional[Returness] = None
 
     def __call__(self):
         try:
@@ -464,7 +464,7 @@ class ConvertImageFormat(MermaidWorkflowFunction):
             else:
                 img.save(output_path, format=fmt.upper())
                 
-            self.rets = self.Returns(path=output_path)
+            self.rets = self.Returness(path=output_path)
             return self.rets
         except Exception as e:
             raise ValueError(f"ConvertImageFormat failed: {e}")
@@ -472,7 +472,7 @@ class ConvertImageFormat(MermaidWorkflowFunction):
 class ImageTiler(MermaidWorkflowFunction):
     description:str = Field("Tiles images into a grid.")
 
-    class Parameters(BaseModel):
+    class Parameter(BaseModel):
         img_size_limit: int = Field(250000000, description="Maximum image size limit in pixels")
         cols: int = Field(2, description="Number of columns for tiling images")
         rows: int = Field(2, description="Number of rows for tiling images")
@@ -491,15 +491,15 @@ class ImageTiler(MermaidWorkflowFunction):
             description="List of normalized coordinates (x,y) in range -1.0 to 1.0 that to do slicing to sub each image , with: width * x, height * y"
         )
         
-    class Returns(BaseModel):
+    class Returness(BaseModel):
         path: Optional[str] = Field(
             None,
             description="Path to the saved tiled image"
         )
 
-    para: Parameters
+    para: Parameter
     args: Arguments
-    rets: Optional[Returns] = None
+    rets: Optional[Returness] = None
 
     def __call__(self, *args, **kwargs):
         print("Starting image tiling process.")            
@@ -511,7 +511,7 @@ class ImageTiler(MermaidWorkflowFunction):
         
         if not images:
             print("No valid images were processed. Exiting.")
-            self.rets = self.Returns(path="")
+            self.rets = self.Returness(path="")
             return self                
         
         self._create_tiled_image(images)
@@ -700,10 +700,10 @@ class ImageTiler(MermaidWorkflowFunction):
             print(
                 f"Tiled image saved at {output_path}. Final size: {tiled_image.size}"
             )
-            self.rets = self.Returns(path=output_path)
+            self.rets = self.Returness(path=output_path)
         except Exception as e:
             print(f"Error saving tiled image: {str(e)}")
-            self.rets = self.Returns(path="")
+            self.rets = self.Returness(path="")
 
 # -------- Main --------
 if __name__ == "__main__":

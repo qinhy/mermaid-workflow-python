@@ -79,16 +79,18 @@ if __name__ == "__main__":
     tsd = {t['name']:t for t in json.loads(mcp_ts)}
 
     engine = MermaidWorkflowEngine(model_registry = tsd)
-    def run_tool(tool_name, tool_args):
-        tool_args = {k:(v.model_dump() if hasattr(v,'model_dump') else v) for k,v in tool_args.items()}
-        if type(tool_args) is not str:
+    def run_tool(tool_name, tool_inputs):
+        tool_inputs = {k:(v.model_dump() if hasattr(v,'model_dump') else v) for k,v in tool_inputs.items()}
+        if type(tool_name) is not str:
             tool_name = tool_name.__class__.__name__
-        # print(f"🔹 Calling tool: {tool_name}")
-        # print(f"🔹 Args: {tool_args}")
-        res_json = asyncio.run(call_tool(tool_name, tool_args))
+        print(f"🔹 Calling tool: {tool_name}")
+        print(f"🔹 inputs: {tool_inputs}")
+        res_json = asyncio.run(call_tool(tool_name, tool_inputs))
         res = json.loads(res_json)
         return res
-
+    
+    print('run_tool','LoadImage',run_tool('LoadImage', {'para': {'path': './tmp/input.jpg'},}))
+    # exit()
     test_graph = """
 graph TD
     LoadImage["{'para': {'path': './tmp/input.jpg'}}"]
@@ -115,40 +117,40 @@ graph TD
     FilterImage -- "{'path':'path'}" --> ConvertImageFormat
     ConvertImageFormat -- "{'path':'path'}" --> EndImage
 """
-    # results = engine.run(test_graph,run_tool)
-    # print("🔍 Setting available tools...")
-    # op_ts = mcp_to_openai_tool(mcp_ts)
-    # print("#### 🤖 Asking LLM about available tools...")
-    # response = asyncio.run(llm('Tell me your available tools.',tools=op_ts))
-    # print(f"🔹 Response:\n{response}\n")
+    results = engine.run(test_graph,run_tool)
+#     # print("🔍 Setting available tools...")
+#     # op_ts = mcp_to_openai_tool(mcp_ts)
+#     # print("#### 🤖 Asking LLM about available tools...")
+#     # response = asyncio.run(llm('Tell me your available tools.',tools=op_ts))
+#     # print(f"🔹 Response:\n{response}\n")
     
-    print("#### 🤖 Asking LLM to generate a new graph...")
-    prompt = f'''
-**I have an example graph and a list of all available tools in JSON format in the following code blocks.**
+#     print("#### 🤖 Asking LLM to generate a new graph...")
+#     prompt = f'''
+# **I have an example graph and a list of all available tools in JSON format in the following code blocks.**
 
-```json
-{json.dumps(tsd,indent=4)}
-```
+# ```json
+# {json.dumps(tsd,indent=4)}
+# ```
 
-```mermaid
-{test_graph}
-```
+# ```mermaid
+# {test_graph}
+# ```
 
-### 📌 Mermaid Graph Protocol (for beginners):
+# ### 📌 Mermaid Graph Protocol (for beginners):
 
-* `graph TD` → Start of a top-down Mermaid flowchart
-* `NodeName[_optionalID]["{{...}}"]` (e.g., `ResizeImage_01`) → Define a node with initialization parameters in JSON-like format
-* The initialization parameters **must not contain mapping information** — only raw values (e.g., numbers, strings, booleans)
-* `A --> B` → Connect node A to node B (no field mapping)
-* `A -- "{{'x':'y'}}" --> B` → Map output field `'x'` from A to input field `'y'` of B
-* Use **valid field names** from each tool's input/output schema
-'''
+# * `graph TD` → Start of a top-down Mermaid flowchart
+# * `NodeName[_optionalID]["{{...}}"]` (e.g., `ResizeImage_01`) → Define a node with initialization parameters in JSON-like format
+# * The initialization parameters **must not contain mapping information** — only raw values (e.g., numbers, strings, booleans)
+# * `A --> B` → Connect node A to node B (no field mapping)
+# * `A -- "{{'x':'y'}}" --> B` → Map output field `'x'` from A to input field `'y'` of B
+# * Use **valid field names** from each tool's input/output schema
+# '''
     
-    response = asyncio.run(llm("Please create a new simple graph. Use image of ./tmp/input.jpg",
-                            instructions=prompt))
-    print(f"🔹 Response:\n{response}\n")
-    print(f"🔹 Graph:\n{engine.extract_mermaid_text(response)}\n")
-    print(engine.run(engine.extract_mermaid_text(response),run_tool))
+#     response = asyncio.run(llm("Please create a new simple graph. Use image of ./tmp/input.jpg",
+#                             instructions=prompt))
+#     print(f"🔹 Response:\n{response}\n")
+#     print(f"🔹 Graph:\n{engine.extract_mermaid_text(response)}\n")
+#     print(engine.run(engine.extract_mermaid_text(response),run_tool))
 
 
 

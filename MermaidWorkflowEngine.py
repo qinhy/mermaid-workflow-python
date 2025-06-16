@@ -17,6 +17,17 @@ from typing import (
 import json
 import re
 
+from pydantic import BaseModel, Field
+from typing import List, Dict, DefaultDict
+from collections import defaultdict
+
+class GraphNode(BaseModel):
+    prev: List[str] = Field(default_factory=list)
+    next: List[str] = Field(default_factory=list)
+    config: Dict[str, dict] = Field(default_factory=dict)
+    maps: Dict[str, str] = Field(default_factory=dict)
+
+Graph = DefaultDict[str, GraphNode]
 
 def parse_mermaid(mermaid_text: str="""
 graph TD
@@ -38,13 +49,14 @@ graph TD
 %% * `A --> B` → Connect node A to node B (no field mapping)
 %% * `A -- "{{'x':'y'}}" --> B` → Map output field `'x'` from A to input field `'y'` of B
 %% * Use **valid field names** from each tool's input/output schema
-""") -> dict:
+"""):
     
     lines = [l.strip() for l in mermaid_text.strip().splitlines()]
     lines = [l for l in lines if ('["{' in l) or ('--' in l)]
     lines = [l for l in lines if '["{}"]' not in l]
     lines = [l for l in lines if not l.startswith('%%')]
-    graph = defaultdict(lambda: {"prev": [], "next": [], "config": {}, "maps": {}})
+    # graph = defaultdict(lambda: {"prev": [], "next": [], "config": {}, "maps": {}})
+    graph: Graph = defaultdict(GraphNode)
 
     node_pattern = re.compile(r'^([\w-]+)\s*\[\s*"(.+)"\s*\]$')
     map_pattern = re.compile(r'^([\w-]+)\s*--\s*"(.*?)"\s*-->\s*([\w-]+)$')
@@ -65,22 +77,22 @@ graph TD
             node, cfg = m.groups()
             parsed = parse_json(cfg)
             if parsed is not None:
-                graph[node]["config"] = parsed
+                graph[node].config = parsed
             continue
         m = map_pattern.match(l)
         if m:
             src, cfg, dst = m.groups()
-            graph[src]["next"].append(dst)
-            graph[dst]["prev"].append(src)
+            graph[src].next.append(dst)
+            graph[dst].prev.append(src)
             parsed = parse_json(cfg)
             if parsed is not None:
-                graph[src]["maps"][dst] = parsed
+                graph[src].maps[dst] = parsed
             continue
         m = simple_pattern.match(l)
         if m:
             src, dst = m.groups()
-            graph[src]["next"].append(dst)
-            graph[dst]["prev"].append(src)
+            graph[src].next.append(dst)
+            graph[dst].prev.append(src)
             continue
         raise ValueError(f"Invalid Mermaid syntax: {l}")
     return dict(graph)
@@ -118,10 +130,10 @@ def validate_dep_multi(needs: List[str], multi_provided: Dict[str, List[str]]) -
     return is_valid, dict(field_sources), missing
 
 
-class MermaidWorkflowFunction(BaseModel):
+class MermaidWorkflowFunctionTemplate(BaseModel):
     """Base class for workflow function nodes with parameters, arguments and returns."""
     
-    class Parameters(BaseModel):
+    class Parameter(BaseModel):
         """Static parameters that configure the function behavior."""
         pass
 
@@ -129,48 +141,69 @@ class MermaidWorkflowFunction(BaseModel):
         """Input arguments received from predecessor nodes."""
         pass
 
-    class Returns(BaseModel):
+    class Returness(BaseModel):
         """Output values passed to successor nodes."""
         pass
 
-    para: Optional[Parameters] = None
-    args: Optional[Arguments] = None
-    rets: Optional[Returns] = None
-    run_at_init:bool = True
+    para: Optional[Parameter|dict] = None
+    args: Optional[Arguments|dict] = None
+    rets: Optional[Returness|dict] = None
+    run_at_init:bool = False
 
-    def model_post_init(self):
-        if self.run_at_init:
-            self()
+class MermaidWorkflowFunction(BaseModel):
+    """Base class for workflow function nodes with parameters, arguments and returns."""
+    
+    class Parameter(BaseModel):
+        """Static parameters that configure the function behavior."""
+        pass
 
-    def __call__(self) -> Returns:
+    class Arguments(BaseModel):
+        """Input arguments received from predecessor nodes."""
+        pass
+
+    class Returness(BaseModel):
+        """Output values passed to successor nodes."""
+        pass
+
+    # para: Optional[Parameter] = None
+    # args: Optional[Arguments] = None
+    # rets: Optional[Returness] = None
+    run_at_init:bool = False
+
+    def model_post_init(self,context):
+        if self.run_at_init: self()
+
+    def __call__(self) -> Returness:
         """Execute the workflow function and return results.
         
-        Returns:
-            Returns: Output values to be passed to successor nodes
+        Returness:
+            Returness: Output values to be passed to successor nodes
         """
         raise NotImplementedError("Workflow functions must implement __call__")
 
-    def update_para(self, data: dict) -> None:
-        # data must has key of "para"
-        if not data or "para" not in data : return
-        para = self.para.model_dump()
-        para.update(data["para"])
-        self.para = self.Parameters(**para)
+    def update(self, data: dict) -> None:
+        """Update para, args, and rets fields from the given data dict."""
+        try:
+            m:MermaidWorkflowFunctionTemplate = MermaidWorkflowFunctionTemplate.model_validate(data)
+        except Exception as e:
+            print(e)
+            return
 
-    def update_args(self, data: dict) -> None:
-        # data must has key of "args"
-        if not data or "args" not in data : return
-        args = self.args.model_dump()
-        args.update(data["args"])
-        self.args = self.Arguments(**args)
+        if m.para and self.para:
+            current = self.para.model_dump()
+            current.update(**m.para.model_dump())
+            self.para = self.Parameter(**current)
 
-    def update_rets(self, data: dict) -> None:
-        # data must has key of "rets"
-        if not data or "rets" not in data : return
-        rets = self.rets.model_dump()
-        rets.update(data["rets"])
-        self.rets = self.Returns(**rets)
+        if m.args and self.args:
+            current = self.args.model_dump()
+            current.update(**m.args.model_dump())
+            self.args = self.Arguments(**current)
 
+        if m.rets and self.rets:
+            current = self.rets.model_dump()
+            current.update(**m.rets.model_dump())
+            self.rets = self.Returness(**current)
+            
     @classmethod
     def from_mcp(cls, name: str, mcp_single_func_data: dict) -> 'MermaidWorkflowFunction':
         # Helper: build model with proper type annotations
@@ -232,32 +265,32 @@ class MermaidWorkflowFunction(BaseModel):
 
         defs = mcp_single_func_data["inputSchema"]["$defs"]
         model_creation_args = {}
-        if "Parameters" in defs:
-            param_def = defs["Parameters"]
-            Parameters = build_model_from_properties("Parameters", param_def["properties"], param_def.get("required", []))
-            model_creation_args["para"] = (Parameters,...)
+        if "Parameter" in defs:
+            param_def = defs["Parameter"]
+            Parameter = build_model_from_properties("Parameter", param_def["properties"], param_def.get("required", []))
+            model_creation_args["para"] = (Parameter,...)
 
         if "Arguments" in defs:
             arg_def = defs["Arguments"]
             Arguments = build_model_from_properties("Arguments", arg_def["properties"], arg_def.get("required", []))
             model_creation_args["args"] = (Arguments,...)
 
-        if "Returns" in defs:
-            arg_def = defs["Returns"]
-            Returns = build_model_from_properties("Returns", arg_def["properties"], arg_def.get("required", []))
-            # model_creation_args["rets"] = (Returns,...)
+        if "Returness" in defs:
+            arg_def = defs["Returness"]
+            Returness = build_model_from_properties("Returness", arg_def["properties"], arg_def.get("required", []))
+            # model_creation_args["rets"] = (Returness,...)
             
         model_cls = create_model(name, **model_creation_args,__base__=MermaidWorkflowFunction)
-        if "Parameters" in defs:model_cls.Parameters = Parameters
+        if "Parameter" in defs:model_cls.Parameter = Parameter
         if "Arguments" in defs:model_cls.Arguments = Arguments
-        if "Returns" in defs:model_cls.Returns = Returns
+        if "Returness" in defs:model_cls.Returness = Returness
 
         return model_cls
 
     @classmethod
     def get_para_class_name(cls) -> str:
-        """Get the name of the Parameters class."""
-        return cls.Parameters.__name__
+        """Get the name of the Parameter class."""
+        return cls.Parameter.__name__
 
     @classmethod
     def get_args_class_name(cls) -> str:
@@ -266,17 +299,17 @@ class MermaidWorkflowFunction(BaseModel):
 
     @classmethod
     def get_rets_class_name(cls) -> str:
-        """Get the name of the Returns class."""
-        return cls.Returns.__name__ 
+        """Get the name of the Returness class."""
+        return cls.Returness.__name__ 
 
     @classmethod
     def get_model_fields(cls, model_name: str) -> list[str]:
         """Get field names from a specified model class.
         
         Args:
-            model_name: Name of the model class ('Parameters', 'Arguments', or 'Returns')
+            model_name: Name of the model class ('Parameter', 'Arguments', or 'Returness')
             
-        Returns:
+        Returness:
             List of field names defined in the model
         """
         if not hasattr(cls, model_name):
@@ -306,7 +339,7 @@ class MermaidWorkflowEngine:
             if type(v) is dict:
                 self.name_to_class_dict[k] = MermaidWorkflowFunction.from_mcp(k,v)
         self.name_to_class = self.name_to_class_dict
-        self.graph = {}
+        self.graph: dict[str, GraphNode] = {}
         self.results: Dict[str, Any] = {}
 
     def extract_mermaid_text(self, text: str) -> str:
@@ -372,8 +405,8 @@ class MermaidWorkflowEngine:
         all_valid = True
 
         for node, meta in self.graph.items():
-            deps = meta.get("prev", [])
-            node_cfg = meta.get("config", {})
+            deps = meta.prev
+            node_cfg = meta.config
             required = set(self.node_args_fields(node))
             provided_fields = defaultdict(list)
 
@@ -391,7 +424,7 @@ class MermaidWorkflowEngine:
             # Build provided fields from dependencies
             for dep in deps:
                 dep_outputs = set(self.node_rets_fields(dep))
-                dep_map = self.graph[dep].get("maps", {}).get(node, {})
+                dep_map = self.graph[dep].maps.get(node, {})
 
                 # — 1. Validate explicit mappings
                 bad_srcs = set(dep_map) - dep_outputs
@@ -453,7 +486,7 @@ class MermaidWorkflowEngine:
             return {}
 
         # Build the dependency graph for topological sorting
-        ts_graph = {node: meta["prev"] for node, meta in self.graph.items()}
+        ts_graph = {node: meta.prev for node, meta in self.graph.items()}
         sorter = TopologicalSorter(ts_graph)
         execution_order = list(sorter.static_order())
 
@@ -463,10 +496,10 @@ class MermaidWorkflowEngine:
 
             # Collect inputs from dependencies
             args_data = {}
-            deps = self.graph[node_name]["prev"]
+            deps = self.graph[node_name].prev
             for dep in deps:
                 dep_results = self.results.get(dep, {})
-                map_config:dict = self.graph[dep].get("maps", {})
+                map_config:dict = self.graph[dep].maps
                 map_config:dict = map_config.get(node_name, {})
 
                 # Default direct field matching
@@ -480,26 +513,28 @@ class MermaidWorkflowEngine:
                         args_data[dst_field] = dep_results[src_field]
 
             # Merge static config
-            conf = self.graph[node_name].get("config", {}) or {}
+            conf = self.graph[node_name].config
             para_data = conf.get("para", {})
             args_data.update(conf.get("args", {}))
 
             cls_data = {}
             try:
-                if hasattr(cls, "Parameters") and len(cls.Parameters.model_fields) > 0:
-                    cls_data['para'] = cls.Parameters(**para_data)
+                if hasattr(cls, "Parameter") and len(cls.Parameter.model_fields) > 0:
+                    cls_data['para'] = cls.Parameter(**para_data)
                 if hasattr(cls, "Arguments") and len(cls.Arguments.model_fields) > 0:
                     cls_data['args'] = cls.Arguments(**args_data)
             except Exception as e:
                 print(f"❌ Error validating config for '{node_name}': {e}")
-                continue
+                raise e
 
             print(f"\n🔄 Executing node '{node_name}' with para: {para_data}")
             print(f"\n🔄 Executing node '{node_name}' with args: {args_data}")
 
             try:
                 instance:MermaidWorkflowFunction = cls(**cls_data)
+                cls_data['run_at_init'] = True
                 res = ignite_func(instance, cls_data)
+                print(f"\n🔄 Executing node '{node_name}' got res: {res}")
 
                 # Extract return values
                 if hasattr(instance, "rets") and hasattr(instance.rets, "model_dump"):
@@ -508,8 +543,12 @@ class MermaidWorkflowEngine:
                     self.results[node_name] = res["rets"]
 
             except Exception as e:
-                print(f"❌ Error executing node '{node_name}': {e}")
-                continue
+                print(f"❌ Error executing node '{node_name}':")
+                print(e)
+                print(cls.model_json_schema())
+                print(cls_data)
+                print(cls)
+                raise e
 
         print("\n✅ Final outputs:")
         for step_name, output in self.results.items():
