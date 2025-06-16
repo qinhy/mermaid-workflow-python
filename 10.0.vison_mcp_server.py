@@ -28,10 +28,6 @@ class LoadImage(MermaidWorkflowFunction):
     para: Parameters
     rets: Optional[Returns] = None
 
-    def __init__(self, para: Parameters, rets: Optional[Returns] = None):
-        super().__init__(para=para, rets=rets)
-        self()
-
     def __call__(self):
         try:
             exists = os.path.exists(self.para.path)
@@ -59,10 +55,6 @@ class ResizeImage(MermaidWorkflowFunction):
     para: Parameters
     args: Arguments
     rets: Optional[Returns] = None
-
-    def __init__(self, args: Arguments, para: Parameters, rets: Optional[Returns] = None):
-        super().__init__(args=args, para=para, rets=rets)
-        self()
 
     def __call__(self):
         try:
@@ -94,10 +86,6 @@ class RotateImage(MermaidWorkflowFunction):
     args: Arguments
     rets: Optional[Returns] = None
 
-    def __init__(self, args: Arguments, para: Parameters, rets: Optional[Returns] = None):
-        super().__init__(args=args, para=para, rets=rets)
-        self()
-
     def __call__(self):
         try:
             if not os.path.exists(self.args.path):
@@ -122,10 +110,6 @@ class GrayscaleImage(MermaidWorkflowFunction):
 
     args: Arguments
     rets: Optional[Returns] = None
-
-    def __init__(self, args: Arguments, rets: Optional[Returns] = None):
-        super().__init__(args=args, rets=rets)
-        self()
 
     def __call__(self):
         try:
@@ -182,10 +166,6 @@ class CropImage(MermaidWorkflowFunction):
     args: Arguments
     rets: Optional[Returns]
 
-    def __init__(self, args: Arguments, para: Parameters, rets: Optional[Returns] = None):
-        super().__init__(args=args, para=para, rets=rets)
-        self()
-
     def __call__(self):
         try:
             if not os.path.exists(self.args.path):
@@ -216,10 +196,6 @@ class FlipImage(MermaidWorkflowFunction):
     args: Arguments
     rets: Optional[Returns]
 
-    def __init__(self, args: Arguments, para: Parameters, rets: Optional[Returns] = None):
-        super().__init__(args=args, para=para, rets=rets)
-        self()
-
     def __call__(self):
         try:
             if not os.path.exists(self.args.path):
@@ -247,10 +223,6 @@ class EndImage(MermaidWorkflowFunction):
 
     args: Arguments
 
-    def __init__(self, args: Arguments):
-        super().__init__(args=args)
-        self()
-
     def __call__(self):
         try:
             if not os.path.exists(self.args.path):
@@ -275,10 +247,6 @@ class BlurImage(MermaidWorkflowFunction):
     para: Parameters
     args: Arguments
     rets: Optional[Returns] = None
-
-    def __init__(self, args: Arguments, para: Parameters = None, rets: Optional[Returns] = None):
-        super().__init__(args=args, para=para, rets=rets)
-        self()
 
     def __call__(self):
         try:
@@ -311,10 +279,6 @@ class AdjustImage(MermaidWorkflowFunction):
     para: Parameters
     args: Arguments
     rets: Optional[Returns] = None
-
-    def __init__(self, args: Arguments, para: Parameters = None, rets: Optional[Returns] = None):
-        super().__init__(args=args, para=para, rets=rets)
-        self()
 
     def __call__(self):
         try:
@@ -361,10 +325,6 @@ class FilterImage(MermaidWorkflowFunction):
     args: Arguments
     rets: Optional[Returns] = None
 
-    def __init__(self, args: Arguments, para: Parameters, rets: Optional[Returns] = None):
-        super().__init__(args=args, para=para, rets=rets)
-        self()
-
     def __call__(self):
         try:
             if not os.path.exists(self.args.path):
@@ -409,9 +369,6 @@ class WatermarkImage(MermaidWorkflowFunction):
     args: Arguments
     rets: Optional[Returns] = None
 
-    def __init__(self, args: Arguments, para: Parameters, rets: Optional[Returns] = None):
-        super().__init__(args=args, para=para, rets=rets)
-        self()
     def __call__(self):
         try:
             if not os.path.exists(self.args.path):
@@ -482,10 +439,6 @@ class ConvertImageFormat(MermaidWorkflowFunction):
     args: Arguments
     rets: Optional[Returns] = None
 
-    def __init__(self, args: Arguments, para: Parameters, rets: Optional[Returns] = None):
-        super().__init__(args=args, para=para, rets=rets)
-        self()
-
     def __call__(self):
         try:
             if not os.path.exists(self.args.path):
@@ -547,10 +500,6 @@ class ImageTiler(MermaidWorkflowFunction):
     para: Parameters
     args: Arguments
     rets: Optional[Returns] = None
-
-    def __init__(self, args: Arguments, para: Parameters, rets: Optional[Returns] = None):
-        super().__init__(args=args, para=para, rets=rets)
-        self()
 
     def __call__(self, *args, **kwargs):
         print("Starting image tiling process.")            

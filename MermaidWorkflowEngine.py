@@ -136,6 +136,11 @@ class MermaidWorkflowFunction(BaseModel):
     para: Optional[Parameters] = None
     args: Optional[Arguments] = None
     rets: Optional[Returns] = None
+    run_at_init:bool = True
+
+    def model_post_init(self):
+        if self.run_at_init:
+            self()
 
     def __call__(self) -> Returns:
         """Execute the workflow function and return results.
