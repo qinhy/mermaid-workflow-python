@@ -1,3 +1,5 @@
+# https://github.com/qinhy/mermaid-workflow-python
+
 from collections import defaultdict
 from graphlib import TopologicalSorter
 from pydantic import BaseModel, create_model
