@@ -213,25 +213,7 @@ class FlipImage(MermaidWorkflowFunction):
             return self.rets
         except Exception as e:
             raise ValueError(f"FlipImage failed: {e}")
-
-
-class EndImage(MermaidWorkflowFunction):
-    description:str = Field("Ends the workflow and reports image output path.")
-
-    class Arguments(BaseModel):
-        path: str = Field(..., description="Final image path")
-
-    args: Arguments
-
-    def __call__(self):
-        try:
-            if not os.path.exists(self.args.path):
-                raise FileNotFoundError(f"Final image not found: {self.args.path}")
-            print(f"EndImage: Final image saved at {self.args.path}")
-        except Exception as e:
-            raise ValueError(f"EndImage failed: {e}")
-
-
+        
 class BlurImage(MermaidWorkflowFunction):
     description:str = Field("Apply a blur filter to an image.")
 
@@ -717,7 +699,6 @@ if __name__ == "__main__":
     add_tool(GrayscaleImage)
     add_tool(CropImage)
     add_tool(FlipImage)
-    add_tool(EndImage)
     add_tool(BlurImage)
     add_tool(AdjustImage)
     add_tool(FilterImage)
@@ -740,7 +721,6 @@ if __name__ == "__main__":
     #     'WatermarkImage':WatermarkImage,
     #     'ConvertImageFormat':ConvertImageFormat,
     #     'ImageTiler':ImageTiler,
-    #     'EndImage':EndImage,
     #         })
     
 #     itc = load_RSA("./tmp/image_tiler.json","./tmp/private_key.pem")    
@@ -752,7 +732,6 @@ if __name__ == "__main__":
 
 #     ImageTiler --> AdjustImage
 #     AdjustImage --> GrayscaleImage
-#     GrayscaleImage --> EndImage
 # """,lambda obj,args:obj)
     
 #     results = engine.run("""
@@ -779,7 +758,6 @@ if __name__ == "__main__":
 #     FlipImage -- "{'path':'path'}" --> WatermarkImage
 #     WatermarkImage -- "{'path':'path'}" --> FilterImage
 #     FilterImage -- "{'path':'path'}" --> ConvertImageFormat
-#     ConvertImageFormat -- "{'path':'path'}" --> EndImage
 # """)
 
 #     results = engine.run("""
@@ -794,5 +772,4 @@ if __name__ == "__main__":
 #     ResizeImage_01 --> BlurImage
 #     BlurImage --> BlurImage_2
 #     BlurImage_2 --> ResizeImage
-#     ResizeImage --> EndImage
 # """)

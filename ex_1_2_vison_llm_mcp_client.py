@@ -114,7 +114,6 @@ graph TD
     FlipImage -- "{'path':'path'}" --> WatermarkImage
     WatermarkImage -- "{'path':'path'}" --> FilterImage
     FilterImage -- "{'path':'path'}" --> ConvertImageFormat
-    ConvertImageFormat -- "{'path':'path'}" --> EndImage
 """
     # results = engine.run(test_graph,run_tool)
 
