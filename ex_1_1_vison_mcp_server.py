@@ -691,7 +691,7 @@ class ImageTiler(MermaidWorkflowFunction):
 if __name__ == "__main__":
     def add_tool(t:Type[MermaidWorkflowFunction]):        
         mcp.add_tool(t, 
-        description=t.model_fields['description'].default)
+            description=t.model_fields['description'].default)
 
     add_tool(LoadImage)
     add_tool(ResizeImage)
@@ -706,22 +706,22 @@ if __name__ == "__main__":
     add_tool(ConvertImageFormat)
     add_tool(ImageTiler)
 
-    mcp.run(transport="stdio")
+    # mcp.run(transport="stdio")
 
-    # engine = MermaidWorkflowEngine(model_registry = {
-    #     'LoadImage':LoadImage,
-    #     'ResizeImage':ResizeImage,
-    #     'RotateImage':RotateImage,
-    #     'GrayscaleImage':GrayscaleImage,
-    #     'CropImage':CropImage,
-    #     'FlipImage':FlipImage,
-    #     'BlurImage':BlurImage,
-    #     'AdjustImage':AdjustImage,
-    #     'FilterImage':FilterImage,
-    #     'WatermarkImage':WatermarkImage,
-    #     'ConvertImageFormat':ConvertImageFormat,
-    #     'ImageTiler':ImageTiler,
-    #         })
+    engine = MermaidWorkflowEngine().model_register(model_registry = {
+        'LoadImage':LoadImage,
+        'ResizeImage':ResizeImage,
+        'RotateImage':RotateImage,
+        'GrayscaleImage':GrayscaleImage,
+        'CropImage':CropImage,
+        'FlipImage':FlipImage,
+        'BlurImage':BlurImage,
+        'AdjustImage':AdjustImage,
+        'FilterImage':FilterImage,
+        'WatermarkImage':WatermarkImage,
+        'ConvertImageFormat':ConvertImageFormat,
+        'ImageTiler':ImageTiler,
+        })
     
 #     itc = load_RSA("./tmp/image_tiler.json","./tmp/private_key.pem")    
 #     aic = {'para':{'brightness':4.5,'contrast':4.5,'saturation':1.0}}
@@ -734,31 +734,33 @@ if __name__ == "__main__":
 #     AdjustImage --> GrayscaleImage
 # """,lambda obj,args:obj)
     
-#     results = engine.run("""
-# graph TD
-#     LoadImage["{'para': {'path': './tmp/input.jpg'}}"]
-#     ResizeImage["{'para': {'width': 512, 'height': 512}}"]
-#     CropImage["{'para': {'left': 50, 'upper': 50, 'right': 462, 'lower': 462}}"]
-#     BlurImage["{'para': {'radius': 3}}"]
-#     RotateImage["{'para': {'angle': 270}}"]
-#     AdjustImage["{'para': {'brightness': 1.2, 'contrast': 1.3, 'saturation': 0.9}}"]
-#     FlipImage["{'para': {'mode': 'vertical'}}"]
-#     WatermarkImage["{'para': {'text':'CONFIDENTIAL', 'position':'bottom_right', 'opacity':0.5}}"]
-#     FilterImage["{'para': {'filter_type': 'sharpen'}}"]
-#     ConvertImageFormat["{'para': {'format': 'png', 'quality':90}}"]
+    print(engine._name_to_class)
 
-#     LoadImage -- "{'path':'path'}" --> ResizeImage
-#     ResizeImage -- "{'path':'path'}" --> CropImage
-#     CropImage -- "{'path':'path'}" --> BlurImage
-#     BlurImage -- "{'path':'path'}" --> GrayscaleImage
-#     GrayscaleImage -- "{'path':'path'}" --> RotateImage
+    results = engine.run("""
+graph TD
+    LoadImage["{'para': {'path': './tmp/input.jpg'}}"]
+    ResizeImage["{'para': {'width': 512, 'height': 512}}"]
+    CropImage["{'para': {'left': 50, 'upper': 50, 'right': 462, 'lower': 462}}"]
+    BlurImage["{'para': {'radius': 3}}"]
+    RotateImage["{'para': {'angle': 270}}"]
+    AdjustImage["{'para': {'brightness': 1.2, 'contrast': 1.3, 'saturation': 0.9}}"]
+    FlipImage["{'para': {'mode': 'vertical'}}"]
+    WatermarkImage["{'para': {'text':'CONFIDENTIAL', 'position':'bottom_right', 'opacity':0.5}}"]
+    FilterImage["{'para': {'filter_type': 'sharpen'}}"]
+    ConvertImageFormat["{'para': {'format': 'png', 'quality':90}}"]
 
-#     RotateImage -- "{'path':'path'}" --> AdjustImage
-#     AdjustImage -- "{'path':'path'}" --> FlipImage
-#     FlipImage -- "{'path':'path'}" --> WatermarkImage
-#     WatermarkImage -- "{'path':'path'}" --> FilterImage
-#     FilterImage -- "{'path':'path'}" --> ConvertImageFormat
-# """)
+    LoadImage -- "{'path':'path'}" --> ResizeImage
+    ResizeImage -- "{'path':'path'}" --> CropImage
+    CropImage -- "{'path':'path'}" --> BlurImage
+    BlurImage -- "{'path':'path'}" --> GrayscaleImage
+    GrayscaleImage -- "{'path':'path'}" --> RotateImage
+
+    RotateImage -- "{'path':'path'}" --> AdjustImage
+    AdjustImage -- "{'path':'path'}" --> FlipImage
+    FlipImage -- "{'path':'path'}" --> WatermarkImage
+    WatermarkImage -- "{'path':'path'}" --> FilterImage
+    FilterImage -- "{'path':'path'}" --> ConvertImageFormat
+""")
 
 #     results = engine.run("""
 # graph TD
