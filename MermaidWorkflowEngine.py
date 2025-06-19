@@ -1,11 +1,10 @@
 # https://github.com/qinhy/mermaid-workflow-python
-
 import json
 import re
+import inspect
 from collections import defaultdict
 from graphlib import TopologicalSorter
 from typing import Any, Callable, DefaultDict, Dict, List, Optional, Tuple, Type, Union
-
 from pydantic import BaseModel, Field, create_model
 
 logger = print
@@ -436,16 +435,67 @@ class MermaidWorkflowEngine(BaseModel):
 
         return args_data
     
-    def node_get(self, node_name: str):
+    def node_get(self, node_name: str, with_instance=False):
         node_name = node_name.split('_')[0]
-        cls:Type[MermaidWorkflowFunction] = self._name_to_class.get(node_name)
+        instance = None
+        tmp = self._name_to_class.get(node_name)
+        if tmp is None:
+            raise ValueError(f'unknow node {node_name}')
+        if type(tmp) is tuple:
+            cls:Type[MermaidWorkflowFunction] = tmp[0]
+            instance = tmp[1]
+        else:
+            cls = tmp
+        if with_instance:
+            return cls,instance
         return cls
-    
-    def node_args_fields(self, node_name: str):
-        return self.node_get(node_name).get_argument_fields()
+    @staticmethod
+    def create_Arguments_model_by__call__(instance):
+        signature = inspect.signature(instance.__call__)
+        params = signature.parameters
+        # Convert signature parameters to fields for Pydantic
+        fields = {}
+        for name, param in params.items():
+            if name == 'self':continue
+            annotation = param.annotation
+            default = param.default if param.default is not inspect.Parameter.empty else ...
+            fields[name] = (annotation, default)
+        # Create the Pydantic model dynamically
+        Arguments = create_model("Arguments", **fields)
+        return Arguments
+    @staticmethod
+    def create_Returness_model_by__call__(instance):
+        signature = inspect.signature(instance.__call__)
+        return_annotation = signature.return_annotation
+        Returness = create_model("Returness", **{'data':(return_annotation,...)})
+        return Returness
 
-    def node_rets_fields(self, node_name: str):
-        return self.node_get(node_name).get_return_fields()
+    def get_fields(self, node:Type[BaseModel],target:str='args',required=True)->set[str]:
+        if target in node.model_fields:
+            target_annotation = node.model_fields[target].annotation
+            if hasattr(target_annotation,'__args__'):
+                target_item_type:Type[BaseModel] = target_annotation.__args__[0]
+            elif hasattr(target_annotation,'model_fields'):
+                target_item_type:Type[BaseModel] = target_annotation
+            else:
+                raise ValueError(f'unknow type of {target_annotation}')
+        elif hasattr(node,'__call__'):
+            if target == 'args':
+                target_item_type = self.create_Arguments_model_by__call__(node)
+            elif target == 'rets':
+                target_item_type = self.create_Returness_model_by__call__(node)
+        else:
+            raise ValueError(f'unknow type of {node}')
+
+        if required:
+            return set([
+                name for name, field in target_item_type.model_fields.items()
+                if field.is_required()
+            ])
+        else:
+            return set([
+                name for name, _ in target_item_type.model_fields.items()
+            ])
 
     def validate_io(self) -> bool:
         logger("🔍 Validating workflow I/O with mapping support...")
@@ -457,30 +507,11 @@ class MermaidWorkflowEngine(BaseModel):
 
         all_valid = True
 
-        def get_fields(node:Type[BaseModel],target:str='args',required=True):
-            target_annotation = node.model_fields[target].annotation
-            if hasattr(target_annotation,'__args__'):
-                target_item_type:Type[BaseModel] = target_annotation.__args__[0]
-            elif hasattr(target_annotation,'model_fields'):
-                target_item_type:Type[BaseModel] = target_annotation
-            else:
-                raise ValueError(f'unknow type of {target_annotation}')
-            if required:
-                return set([
-                    name for name, field in target_item_type.model_fields.items()
-                    if field.is_required()
-                ])
-            else:
-                return set([
-                    name for name, field in target_item_type.model_fields.items()
-                ])
-
-
         for node_name, meta in self._graph.items():
             deps = meta.prev
             node_cfg = meta.config
             node = self.node_get(node_name)
-            required = get_fields(node,'args',required=True)
+            required = self.get_fields(node,'args',required=True)
             provided_fields = defaultdict(list)
 
             # No dependencies — check config directly
@@ -497,7 +528,7 @@ class MermaidWorkflowEngine(BaseModel):
             # Build provided fields from dependencies
             for dep in deps:
                 dep_node = self.node_get(dep)          
-                dep_outputs = get_fields(dep_node,'rets',required=False)
+                dep_outputs = self.get_fields(dep_node,'rets',required=False)
                 dep_map = self._graph[dep].maps.get(node_name, {})
 
                 # — 1. Validate explicit mappings
@@ -565,7 +596,8 @@ class MermaidWorkflowEngine(BaseModel):
 
         for node_name in execution_order:
             self._results[node_name] = {}
-            cls:Type[MermaidWorkflowFunction] = self.node_get(node_name)
+            cls,instance = self.node_get(node_name,True)
+            cls:Type[MermaidWorkflowFunction] = cls
 
             # Collect inputs from dependencies
             args_data = {}
@@ -577,7 +609,7 @@ class MermaidWorkflowEngine(BaseModel):
 
                 # Default direct field matching
                 for field in dep_results:
-                    if field in cls.get_argument_fields():
+                    if field in self.get_fields(cls,'args',required=True):
                         args_data[field] = dep_results[field]
 
                 # Field remapping
@@ -592,9 +624,9 @@ class MermaidWorkflowEngine(BaseModel):
 
             cls_data = {}
             try:
-                if 'para' in cls.model_fields:
+                if len(para_data)>0:
                     cls_data['para'] = {**para_data}
-                if 'args' in cls.model_fields:
+                if len(args_data)>0:
                     cls_data['args'] = {**args_data}
             except Exception as e:
                 logger(f"❌ Error validating config for '{node_name}': {e}")
@@ -602,7 +634,8 @@ class MermaidWorkflowEngine(BaseModel):
 
             logger(f"🔄 Executing node '{node_name}' with : {cls_data}")
             try:
-                instance:MermaidWorkflowFunction = cls(**cls_data)
+                if instance is None:
+                    instance:MermaidWorkflowFunction = cls(**cls_data)
                 cls_data['run_at_init'] = True
                 res = ignite_func(instance, cls_data)
                 logger(f"✅ Executing node '{node_name}' got res: {res}")
@@ -612,6 +645,11 @@ class MermaidWorkflowEngine(BaseModel):
                     self._results[node_name] = instance.rets.model_dump()
                 elif isinstance(res, dict) and "rets" in res:
                     self._results[node_name] = res["rets"]
+                elif hasattr(instance,'__call__'):
+                    Returness:Type[BaseModel] = self.create_Returness_model_by__call__(instance)
+                    self._results[node_name] = Returness(data=res).model_dump()
+                else:
+                    raise ValueError(f"Node {node_name} must return a dict with 'rets' key or have a 'rets' attribute.")
 
             except Exception as e:
                 logger(f"❌ Error executing node '{node_name}':")
