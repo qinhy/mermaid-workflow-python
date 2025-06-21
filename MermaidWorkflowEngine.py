@@ -10,15 +10,11 @@ from pydantic import BaseModel, Field, create_model
 logger = print
 # logger = lambda *args,**kwargs: None
 
-class GraphNode(BaseModel):
-    prev: List[str] = Field(default_factory=list)
-    next: List[str] = Field(default_factory=list)
-    config: Dict[str, dict] = Field(default_factory=dict)
-    maps: Dict[str, dict] = Field(default_factory=dict)
+# ------------------------------
+# Mermaid Protocol Documentation
+# ------------------------------
 
-Graph = DefaultDict[str, GraphNode]
-
-def mermaid_protocol()->str:
+def mermaid_protocol() -> str:
     return '''
 ### 📌 Mermaid Graph Protocol (for beginners):
 * `graph TD` → Start of a top-down Mermaid flowchart
@@ -29,7 +25,97 @@ def mermaid_protocol()->str:
 * Use **valid field names** from each tool's input/output schema
 '''
 
-def parse_mermaid(mermaid_text: str="""
+# ------------------------------
+# Data Structures
+# ------------------------------
+
+class GraphNode(BaseModel):
+    prev: List[str] = Field(default_factory=list)
+    next: List[str] = Field(default_factory=list)
+    config: Dict[str, dict] = Field(default_factory=dict)
+    maps: List[Tuple[str, str]] = Field(default_factory=list)  # (source_field, destination_field)
+
+Graph = DefaultDict[str, GraphNode]
+
+# ------------------------------
+# Parser
+# ------------------------------
+
+def parse_mermaid(mermaid_text: str = """
+graph TD
+    LoadImage["{'para': {'path': './tmp/input.jpg'}}"]
+    BlurImage["{'para': {'radius': 2}}"]
+    BlurImage_2["{'para': {'radius': 5}}"]
+    ResizeImage_01["{'para': {'width': 512, 'height': 512}}"]
+    ResizeImage["{'para': {'width': 1024, 'height': 1024}}"]
+
+    LoadImage -- "{'path':'path'}" --> ResizeImage_01
+    ResizeImage_01 --> BlurImage
+    BlurImage --> BlurImage_2
+    BlurImage_2 --> ResizeImage
+""") -> Dict[str, GraphNode]:
+# Got
+# {'LoadImage': GraphNode(prev=[], next=['ResizeImage_01'], config={'para': {'path': './tmp/input.jpg'}}, 
+#                                   maps=[('LoadImage::path', 'ResizeImage_01::path')]),
+#  'BlurImage': GraphNode(prev=['ResizeImage_01'], next=['BlurImage_2'], config={'para': {'radius': 2}}, maps=[]),
+#  'BlurImage_2': GraphNode(prev=['BlurImage'], next=['ResizeImage'], config={'para': {'radius': 5}}, maps=[]),
+#  'ResizeImage_01': GraphNode(prev=['LoadImage'], next=['BlurImage'], config={'para': {'width': 512, 'height': 512}}, maps=[]),
+#  'ResizeImage': GraphNode(prev=['BlurImage_2'], next=[], config={'para': {'width': 1024, 'height': 1024}}, maps=[])}
+
+    lines = [l.strip() for l in mermaid_text.strip().splitlines()]
+    lines = [l for l in lines if ('["{' in l) or ('--' in l)]
+    lines = [l for l in lines if '["{}"]' not in l and not l.startswith('%%')]
+
+    graph: Graph = defaultdict(GraphNode)
+
+    node_pattern = re.compile(r'^([\w-]+)\s*\[\s*"(.+)"\s*\]$')
+    map_pattern = re.compile(r'^([\w-]+)\s*--\s*"(.*?)"\s*-->\s*([\w-]+)$')
+    simple_pattern = re.compile(r'^([\w-]+)\s*-->\s*([\w-]+)$')
+
+    def parse_json(s: str) -> Any:
+        try:
+            return json.loads(s.replace("'", '"'))
+        except Exception as e:
+            raise ValueError(f"❌ Error parsing JSON content: {s} → {e}")
+
+    for l in lines:
+        if not l or l.startswith("graph"):
+            continue
+
+        # Node definition
+        m = node_pattern.match(l)
+        if m:
+            node, cfg = m.groups()
+            parsed = parse_json(cfg)
+            if parsed is not None:
+                graph[node].config = parsed
+            continue
+
+        # Mapped edge
+        m = map_pattern.match(l)
+        if m:
+            src, cfg, dst = m.groups()
+            graph[src].next.append(dst)
+            graph[dst].prev.append(src)
+            parsed = parse_json(cfg)
+            if parsed is not None:
+                for src_field, dst_field in parsed.items():
+                    graph[src].maps.append((f"{src}::{src_field}", f"{dst}::{dst_field}"))
+            continue
+
+        # Simple edge
+        m = simple_pattern.match(l)
+        if m:
+            src, dst = m.groups()
+            graph[src].next.append(dst)
+            graph[dst].prev.append(src)
+            continue
+
+        raise ValueError(f"❌ Invalid Mermaid syntax: {l}")
+
+    return dict(graph)
+
+def parse_mermaid_old(mermaid_text: str="""
 graph TD
     LoadImage["{'para': {'path': './tmp/input.jpg'}}"]
     BlurImage["{'para': {'radius': 2}}"]
@@ -138,30 +224,30 @@ class MermaidWorkflowFunctionTemplate(BaseModel):
 class MermaidWorkflowFunction(BaseModel):
     """Base class for workflow function nodes with parameters, arguments and returns."""
     
-    class Parameter(BaseModel):
-        """Static parameters that configure the function behavior."""
-        pass
+    # class Parameter(BaseModel):
+    #     """Static parameters that configure the function behavior."""
+    #     pass
 
-    class Arguments(BaseModel):
-        """Input arguments received for function behavior."""
-        pass
+    # class Arguments(BaseModel):
+    #     """Input arguments received for function behavior."""
+    #     pass
 
-    class Returness(BaseModel):
-        """Output values of function."""
-        pass
+    # class Returness(BaseModel):
+    #     """Output values of function."""
+    #     pass
 
     # should not define just for comment
-    para: Optional[Parameter|dict] = None
-    args: Optional[Arguments|dict] = None
-    rets: Optional[Returness|dict] = None
+    # para: Optional[Parameter|dict] = None
+    # args: Optional[Arguments|dict] = None
+    # rets: Optional[Returness|dict] = None
 
     run_at_init:bool = False
 
     def model_post_init(self,context):
         if self.run_at_init: self()
 
-    def __call__(self) -> Returness:
-        raise NotImplementedError("Workflow functions must implement __call__")
+    # def __call__(self) -> Returness:
+    #     raise NotImplementedError("Workflow functions must implement __call__")
 
     def update(self, data: dict) -> None:
         """Update para, args, and rets fields from the given data dict."""
@@ -406,35 +492,6 @@ class MermaidWorkflowEngine(BaseModel):
     def parse_mermaid(self, mermaid_text:str) -> Dict[str, Dict[str, Any]]:
         return parse_mermaid(mermaid_text)
     
-    def _collect_args_from_deps(self, node_name: str, args_fields: List[str], deps: List[str]) -> Dict[str, Any]:
-        args_data = {}
-        used_fields = set()
-        field_source_map = defaultdict(list)
-
-        for dep in deps:
-            dep_result = self._results.get(dep, {})
-            for key in dep_result:
-                field_source_map[dep].append(key)
-
-        for field in args_fields:
-            found = False
-            for dep in deps:
-                dep_result = self._results.get(dep, {})
-                if field in dep_result:
-                    args_data[field] = dep_result[field]
-                    used_fields.add(field)
-                    found = True
-                    break
-            if not found:
-                logger(f"⚠️ Warning: Field '{field}' required by '{node_name}' not found in dependencies: {deps}")
-
-        for dep, fields in field_source_map.items():
-            unused = set(fields) - used_fields
-            if unused:
-                logger(f"ℹ️ Info: Fields from '{dep}' not used by '{node_name}': {sorted(unused)}")
-
-        return args_data
-    
     def node_get(self, node_name: str, with_instance=False):
         node_name = node_name.split('_')[0]
         instance = None
@@ -449,6 +506,7 @@ class MermaidWorkflowEngine(BaseModel):
         if with_instance:
             return cls,instance
         return cls
+    
     @staticmethod
     def create_Arguments_model_by__call__(instance):
         signature = inspect.signature(instance.__call__)
@@ -463,14 +521,18 @@ class MermaidWorkflowEngine(BaseModel):
         # Create the Pydantic model dynamically
         Arguments = create_model("Arguments", **fields)
         return Arguments
+    
     @staticmethod
     def create_Returness_model_by__call__(instance):
         signature = inspect.signature(instance.__call__)
         return_annotation = signature.return_annotation
-        Returness = create_model("Returness", **{'data':(return_annotation,...)})
+        fields = {}
+        fields['data'] = (return_annotation, ...)
+        Returness = create_model("Returness", **fields)
         return Returness
 
     def get_fields(self, node:Type[BaseModel],target:str='args',required=True)->set[str]:
+
         if target in node.model_fields:
             target_annotation = node.model_fields[target].annotation
             if hasattr(target_annotation,'__args__'):
@@ -479,6 +541,7 @@ class MermaidWorkflowEngine(BaseModel):
                 target_item_type:Type[BaseModel] = target_annotation
             else:
                 raise ValueError(f'unknow type of {target_annotation}')
+            
         elif hasattr(node,'__call__'):
             if target == 'args':
                 target_item_type = self.create_Arguments_model_by__call__(node)
@@ -486,7 +549,7 @@ class MermaidWorkflowEngine(BaseModel):
                 target_item_type = self.create_Returness_model_by__call__(node)
         else:
             raise ValueError(f'unknow type of {node}')
-
+        
         if required:
             return set([
                 name for name, field in target_item_type.model_fields.items()
@@ -496,13 +559,15 @@ class MermaidWorkflowEngine(BaseModel):
             return set([
                 name for name, _ in target_item_type.model_fields.items()
             ])
-
-    def validate_io(self) -> bool:
+        
+    def validate_io(self, initial_args: Dict[str, Any] = {}) -> bool:
         logger("🔍 Validating workflow I/O with mapping support...")
 
-        unknown = set([n.split("_")[0] for n in list(self._graph.keys())]) - set(self._name_to_class)
-        if unknown:
-            logger(f"❌ Unknown classes found: {unknown}")
+        unknown_classes = {
+            n.split("_")[0] for n in self._graph.keys()
+        } - set(self._name_to_class)
+        if unknown_classes:
+            logger(f"❌ Unknown classes found: {unknown_classes}")
             return False
 
         all_valid = True
@@ -511,158 +576,147 @@ class MermaidWorkflowEngine(BaseModel):
             deps = meta.prev
             node_cfg = meta.config
             node = self.node_get(node_name)
-            required = self.get_fields(node,'args',required=True)
+            required_fields = self.get_fields(node, 'args', required=True)
+            required = {f'{node_name}::{f}' for f in required_fields}
             provided_fields = defaultdict(list)
 
-            # No dependencies — check config directly
             if not deps:
-                config_args = set(node_cfg.get('args', {}).keys())
-                is_valid, missing = validate_dep_single(list(required), list(config_args))
+                # Combine config and initial_args for validation
+                config_args = set(node_cfg.get('args', {}).keys()) | set(initial_args.keys())
+                is_valid, missing = validate_dep_single(list(required_fields), list(config_args))
                 if not is_valid:
                     logger(f"❌ Node '{node_name}' has no dependencies but requires inputs: {missing}")
                     all_valid = False
                 else:
-                    logger(f"⚠️ Node '{node_name}' has no dependencies and no required inputs.")
+                    logger(f"✅ Node '{node_name}' with no dependencies passed input validation.")
                 continue
 
-            # Build provided fields from dependencies
             for dep in deps:
-                dep_node = self.node_get(dep)          
-                dep_outputs = self.get_fields(dep_node,'rets',required=False)
-                dep_map = self._graph[dep].maps.get(node_name, {})
+                dep_node = self.node_get(dep)
+                dep_outputs = {
+                    f'{dep}::{f}' for f in self.get_fields(dep_node, 'rets', required=False)
+                }
 
-                # — 1. Validate explicit mappings
-                bad_srcs = set(dep_map) - dep_outputs
-                for src in bad_srcs:
-                    logger(f"❌ Field '{src}' not found in outputs of '{dep}'(has {[*dep_outputs]})")
+                mappings = self._graph[dep].maps
+                explicit_srcs = [m[0] for m in mappings]
+                explicit_dsts = [m[1] for m in mappings]
+
+                # Validate mappings
+                for src in set(explicit_srcs) - dep_outputs:
+                    logger(f"❌ Field '{src}' not in outputs of '{dep}' (has {[*dep_outputs]})")
                     all_valid = False
 
-                bad_dsts = set(dep_map.values()) - required
-                for dst in bad_dsts:
-                    logger(f"⚠️ Mapping to '{dst}' ignored—it's not required by '{node_name}'")
+                for dst in set(explicit_dsts) - required:
+                    logger(f"⚠️ Mapping to '{dst}' ignored — not required by '{node_name}'")
 
-                for src, dst in dep_map.items():
+                for src, dst in zip(explicit_srcs, explicit_dsts):
                     if src == dst and dst in required:
-                        logger(f"⚠️ Redundant explicit mapping '{src}→{dst}' for '{node_name}'")
+                        logger(f"⚠️ Redundant mapping '{src}→{dst}' for '{node_name}'")
 
-                # — 2. Apply explicit mappings
-                for src, dst in dep_map.items():
-                    if src in dep_outputs and dst in required:
-                        provided_fields[dst].append(dep)
+                # Apply explicit mappings
+                for src, dst in zip(explicit_srcs, explicit_dsts):
+                    provided_fields[dst].append(src)
 
-                # — 3. Default 1:1 mappings
-                unmapped_defaults = (dep_outputs & required) - set(dep_map.values())
-                for field in unmapped_defaults:
-                    provided_fields[field].append(dep)
+                # Implicit match
+                unmapped_outputs = dep_outputs - set(explicit_srcs)
+                for output in unmapped_outputs:
+                    field = output.split("::", 1)[1]
+                    candidate_dst = f'{node_name}::{field}'
+                    if candidate_dst in required:
+                        provided_fields[candidate_dst].append(output)
 
-                # — 4. Warn unused outputs
-                used_outputs = set(dep_map.keys()).union(unmapped_defaults)
-                unused = dep_outputs - used_outputs
-                if unused:
-                    logger(f"⚠️ Outputs from '{dep}' to '{node_name}' never used: {sorted(unused)}")
-
-            # — 5. Validate with validate_dep_multi
-            multi_provided = defaultdict(list)
-            for field, sources in provided_fields.items():
-                for src in sources:
-                    multi_provided[src].append(field)
-
-            is_valid, field_sources, missing = validate_dep_multi(list(required), multi_provided)
-            if not is_valid:
-                for field in missing:
-                    logger(f"❌ Missing field '{field}' for node '{node_name}' from dependencies: {deps}")
+            # Final validation
+            missing = required - provided_fields.keys()
+            if missing:
+                logger(f"❌ Node '{node_name}' is missing required inputs: {missing}")
                 all_valid = False
-
-        if all_valid:
-            logger("✅ Workflow validation passed: All inputs are satisfied.")
-        else:
-            logger("❌ Workflow validation failed. See messages above.")
+            else:
+                logger(f"✅ Node '{node_name}' I/O validated successfully.")
 
         return all_valid
 
-    def run(self, mermaid_text: str = None, ignite_func: Optional[Callable] = None) -> Dict[str, Any]:
-        if ignite_func is None:
-            ignite_func = lambda obj, args: obj()
-        if mermaid_text is not None:
+    def run(self, mermaid_text: str = None, ignite_func: Optional[Callable] = None,
+            initial_args: dict = {}) -> Dict[str, Any]:
+        
+        ignite_func = ignite_func or (lambda obj, args: obj())
+
+        if mermaid_text:
             self._graph = self.parse_mermaid(mermaid_text)
-        if not self.validate_io():
+
+        if not self.validate_io(initial_args=initial_args):
             logger("❌ Workflow validation failed. Exiting.")
             return {}
 
-        # Build the dependency graph for topological sorting
+        # Topological order
         ts_graph = {node: meta.prev for node, meta in self._graph.items()}
-        sorter = TopologicalSorter(ts_graph)
-        execution_order = list(sorter.static_order())
+        execution_order = list(TopologicalSorter(ts_graph).static_order())
 
-        for node_name in execution_order:
+        for i, node_name in enumerate(execution_order):
             self._results[node_name] = {}
-            cls,instance = self.node_get(node_name,True)
-            cls:Type[MermaidWorkflowFunction] = cls
+            meta = self._graph[node_name]
+            deps = meta.prev
+            cls, instance = self.node_get(node_name, with_instance=True)
+            cls: Type[MermaidWorkflowFunction]
 
-            # Collect inputs from dependencies
+            # Collect inputs from deps
             args_data = {}
-            deps = self._graph[node_name].prev
+            required_args = self.get_fields(cls, 'args', required=True)
+
             for dep in deps:
-                dep_results = self._results.get(dep, {})
-                map_config:dict = self._graph[dep].maps
-                map_config:dict = map_config.get(node_name, {})
+                dep_result = self._results.get(dep, {})
+                dep_mappings = [m for m in self._graph[dep].maps if node_name in m[1]]
 
-                # Default direct field matching
-                for field in dep_results:
-                    if field in self.get_fields(cls,'args',required=True):
-                        args_data[field] = dep_results[field]
+                # Apply mappings
+                for src, dst in dep_mappings:
+                    src, dst = src.split("::", 1)[1], dst.split("::", 1)[1]
+                    if src in dep_result:
+                        args_data[dst] = dep_result[src]                
 
-                # Field remapping
-                for src_field, dst_field in map_config.items():
-                    if src_field in dep_results:
-                        args_data[dst_field] = dep_results[src_field]
+                # Implicit match
+                for field in dep_result:
+                    if field in required_args and field not in args_data:
+                        args_data[field] = dep_result[field]
 
             # Merge static config
-            conf = self._graph[node_name].config
-            para_data = conf.get("para", {})
-            args_data.update(conf.get("args", {}))
+            config = meta.config
+            para_data = config.get("para", {})
+            args_data.update(config.get("args", {}))
+            
+            if i == 0 and initial_args:
+                args_data.update(initial_args)
+            
 
             cls_data = {}
-            try:
-                if len(para_data)>0:
-                    cls_data['para'] = {**para_data}
-                if len(args_data)>0:
-                    cls_data['args'] = {**args_data}
-            except Exception as e:
-                logger(f"❌ Error validating config for '{node_name}': {e}")
-                raise e
+            if para_data:
+                cls_data['para'] = para_data
+            if args_data:
+                cls_data['args'] = args_data
 
-            logger(f"🔄 Executing node '{node_name}' with : {cls_data}")
             try:
+                logger(f"🔄 Executing node '{node_name}' with: {cls_data}")
                 if instance is None:
-                    instance:MermaidWorkflowFunction = cls(**cls_data)
+                    instance = cls(**cls_data)
+
                 cls_data['run_at_init'] = True
                 res = ignite_func(instance, cls_data)
-                logger(f"✅ Executing node '{node_name}' got res: {res}")
 
-                # Extract return values
+                logger(f"✅ Node '{node_name}' executed successfully: {res}")
+
+                # Handle outputs
                 if hasattr(instance, "rets") and hasattr(instance.rets, "model_dump"):
                     self._results[node_name] = instance.rets.model_dump()
                 elif isinstance(res, dict) and "rets" in res:
                     self._results[node_name] = res["rets"]
-                elif hasattr(instance,'__call__'):
-                    Returness:Type[BaseModel] = self.create_Returness_model_by__call__(instance)
+                elif hasattr(instance, "__call__"):
+                    Returness: Type[BaseModel] = self.create_Returness_model_by__call__(instance)
                     self._results[node_name] = Returness(data=res).model_dump()
                 else:
-                    raise ValueError(f"Node {node_name} must return a dict with 'rets' key or have a 'rets' attribute.")
+                    raise ValueError(f"Node '{node_name}' must return dict with 'rets' or have a 'rets' attribute.")
 
             except Exception as e:
-                logger(f"❌ Error executing node '{node_name}':")
-                logger(e)
-                raise e
+                logger(f"❌ Error executing node '{node_name}': {e}")
+                raise
 
-        self._results['final'] = self._results[node_name]
-        logger(f"✅ Final outputs:\n{json.dumps(self._results,indent=4)}")
+        self._results['final'] = self._results.get(node_name, {})
+        logger(f"✅ Final outputs:\n{json.dumps(self._results, indent=4)}")
         return self._results
-
-
-
-
-
-
-
