@@ -14,7 +14,6 @@ from RSAjson import load_RSA
 
 mcp = FastMCP(name="ImageServer", stateless_http=True)
 
-
 class LoadImage(MermaidWorkflowFunction):
     description:str = Field("Validates if the input image path exists.")
 
@@ -37,8 +36,7 @@ class LoadImage(MermaidWorkflowFunction):
             return self.rets
         except Exception as e:
             raise ValueError(f"LoadImage failed: {e}")
-
-
+            
 class ResizeImage(MermaidWorkflowFunction):
     description:str = Field("Resize an image to given width and height.")
 
@@ -68,8 +66,7 @@ class ResizeImage(MermaidWorkflowFunction):
             return self.rets
         except Exception as e:
             raise ValueError(f"ResizeImage failed: {e}")
-
-
+            
 class RotateImage(MermaidWorkflowFunction):
     description:str = Field("Rotate an image by a given angle.")
 
@@ -145,8 +142,7 @@ class GrayscaleImage(MermaidWorkflowFunction):
 
         except Exception as e:
             raise ValueError(f"GrayscaleImage failed: {e}")
-
-
+            
 class CropImage(MermaidWorkflowFunction):
     description:str = Field("Crop the image to a specific box (left, upper, right, lower).")
 
@@ -178,8 +174,7 @@ class CropImage(MermaidWorkflowFunction):
             return self.rets
         except Exception as e:
             raise ValueError(f"CropImage failed: {e}")
-
-
+            
 class FlipImage(MermaidWorkflowFunction):
     description:str = Field("Flip an image horizontally or vertically.")
 
@@ -242,8 +237,7 @@ class BlurImage(MermaidWorkflowFunction):
             return self.rets
         except Exception as e:
             raise ValueError(f"BlurImage failed: {e}")
-
-
+            
 class AdjustImage(MermaidWorkflowFunction):
     description:str = Field("Adjust the brightness, contrast, or saturation of an image.")
 
@@ -289,8 +283,7 @@ class AdjustImage(MermaidWorkflowFunction):
             return self.rets
         except Exception as e:
             raise ValueError(f"AdjustImage failed: {e}")
-
-
+            
 class FilterImage(MermaidWorkflowFunction):
     description:str = Field("Apply various filters to an image.")
 
@@ -331,8 +324,7 @@ class FilterImage(MermaidWorkflowFunction):
             return self.rets
         except Exception as e:
             raise ValueError(f"FilterImage failed: {e}")
-
-
+            
 class WatermarkImage(MermaidWorkflowFunction):
     description:str = Field("Add a watermark text to an image.")
 
@@ -402,8 +394,7 @@ class WatermarkImage(MermaidWorkflowFunction):
             return self.rets
         except Exception as e:
             raise ValueError(f"WatermarkImage failed: {e}")
-
-
+            
 class ConvertImageFormat(MermaidWorkflowFunction):
     description:str = Field("Convert an image to a different format.")
 
@@ -461,7 +452,7 @@ class ImageTiler(MermaidWorkflowFunction):
         final_width: int = Field(800, description="Final image width in pixels")
         final_height: int = Field(600, description="Final image height in pixels")
         output_format: str = Field("jpg", description="Output image format (jpg, png, etc.)")
-        output_path: Optional[str] = Field('tiled_image.jpg', description="Custom output path for the tiled image")
+        output_path: str = Field('tiled_image.jpg', description="Custom output path for the tiled image")
         
     class Arguments(BaseModel):
         image_sources: List[str] = Field(
@@ -474,10 +465,7 @@ class ImageTiler(MermaidWorkflowFunction):
         )
         
     class Returness(BaseModel):
-        path: Optional[str] = Field(
-            None,
-            description="Path to the saved tiled image"
-        )
+        path: str = Field(description="Path to the saved tiled image")
 
     para: Parameter
     args: Arguments
@@ -686,7 +674,58 @@ class ImageTiler(MermaidWorkflowFunction):
         except Exception as e:
             print(f"Error saving tiled image: {str(e)}")
             self.rets = self.Returness(path="")
+            
+class ImagesToPDF(MermaidWorkflowFunction):
+    description: str = Field("Convert multiple images to a single A4-sized PDF.")
 
+    class Parameter(BaseModel):
+        output_path: Optional[str] = None
+        dpi: int = 250  # DPI for A4 conversion (use 300 for higher quality)
+
+    class Arguments(BaseModel):
+        image_paths: List[str]
+
+    class Returns(BaseModel):
+        path: str
+
+    para: Parameter = Parameter()
+    args: Arguments
+    rets: Optional[Returns] = None
+
+    def __call__(self):
+        try:
+            if not self.args.image_paths:
+                raise ValueError("No image paths provided.")
+
+            # Set A4 dimensions in pixels
+            dpi = self.para.dpi
+            a4_width = int(8.27 * dpi)
+            a4_height = int(11.69 * dpi)
+            a4_size = (a4_width, a4_height)
+
+            images:list[Image.Image] = []
+            for path in self.args.image_paths:
+                if not os.path.exists(path):
+                    raise FileNotFoundError(f"Image not found at: {path}")
+                img = Image.open(path).convert("RGB")
+                img.thumbnail(a4_size, Image.LANCZOS)  # Resize maintaining aspect ratio
+
+                # Center the image on a white A4 canvas
+                bg = Image.new("RGB", a4_size, (255, 255, 255))
+                offset = ((a4_size[0] - img.width) // 2, (a4_size[1] - img.height) // 2)
+                bg.paste(img, offset)
+                images.append(bg)
+
+            base_name = os.path.splitext(os.path.basename(self.args.image_paths[0]))[0]
+            output_pdf = f"{base_name}_merged_a4.pdf"
+            output_pdf = self.para.output_path or output_pdf
+            images[0].save(output_pdf, save_all=True, append_images=images[1:])
+            self.rets = self.Returns(path=output_pdf)
+            return self.rets
+
+        except Exception as e:
+            raise ValueError(f"ImagesToPDF failed: {e}")
+                
 # -------- Main --------
 if __name__ == "__main__":
     def add_tool(t:Type[MermaidWorkflowFunction]):        
@@ -705,8 +744,9 @@ if __name__ == "__main__":
     add_tool(WatermarkImage)
     add_tool(ConvertImageFormat)
     add_tool(ImageTiler)
+    add_tool(ImagesToPDF)
 
-    # mcp.run(transport="stdio")
+    mcp.run(transport="stdio")
 
     engine = MermaidWorkflowEngine().model_register(model_registry = {
         'LoadImage':LoadImage,
@@ -721,46 +761,48 @@ if __name__ == "__main__":
         'WatermarkImage':WatermarkImage,
         'ConvertImageFormat':ConvertImageFormat,
         'ImageTiler':ImageTiler,
+        'ImagesToPDF':ImagesToPDF,
         })
     
-#     itc = load_RSA("./tmp/image_tiler.json","./tmp/private_key.pem")    
-#     aic = {'para':{'brightness':4.5,'contrast':4.5,'saturation':1.0}}
+#     itc,aic = load_RSA("./tmp/image_tiler.rjson","./tmp/private_key.pem")
 #     results = engine.run(f"""
 # graph TD
 #     ImageTiler["{itc}"]
 #     AdjustImage["{aic}"]
+#     ImagesToPDF["{{'args':{{'image_paths':['./tiled_image_adjusted_gray.jpg']}}}}"]
 
 #     ImageTiler --> AdjustImage
 #     AdjustImage --> GrayscaleImage
-# """,lambda obj,args:obj)
+#     GrayscaleImage --> ImagesToPDF
+# """,lambda obj,args:obj(),validate_io=False)
     
-    print(engine._name_to_class)
+#     print(engine._name_to_class)
 
-    results = engine.run("""
-graph TD
-    LoadImage["{'para': {'path': './tmp/input.jpg'}}"]
-    ResizeImage["{'para': {'width': 512, 'height': 512}}"]
-    CropImage["{'para': {'left': 50, 'upper': 50, 'right': 462, 'lower': 462}}"]
-    BlurImage["{'para': {'radius': 3}}"]
-    RotateImage["{'para': {'angle': 270}}"]
-    AdjustImage["{'para': {'brightness': 1.2, 'contrast': 1.3, 'saturation': 0.9}}"]
-    FlipImage["{'para': {'mode': 'vertical'}}"]
-    WatermarkImage["{'para': {'text':'CONFIDENTIAL', 'position':'bottom_right', 'opacity':0.5}}"]
-    FilterImage["{'para': {'filter_type': 'sharpen'}}"]
-    ConvertImageFormat["{'para': {'format': 'png', 'quality':90}}"]
+#     results = engine.run("""
+# graph TD
+#     LoadImage["{'para': {'path': './tmp/input.jpg'}}"]
+#     ResizeImage["{'para': {'width': 512, 'height': 512}}"]
+#     CropImage["{'para': {'left': 50, 'upper': 50, 'right': 462, 'lower': 462}}"]
+#     BlurImage["{'para': {'radius': 3}}"]
+#     RotateImage["{'para': {'angle': 270}}"]
+#     AdjustImage["{'para': {'brightness': 1.2, 'contrast': 1.3, 'saturation': 0.9}}"]
+#     FlipImage["{'para': {'mode': 'vertical'}}"]
+#     WatermarkImage["{'para': {'text':'CONFIDENTIAL', 'position':'bottom_right', 'opacity':0.5}}"]
+#     FilterImage["{'para': {'filter_type': 'sharpen'}}"]
+#     ConvertImageFormat["{'para': {'format': 'png', 'quality':90}}"]
 
-    LoadImage -- "{'path':'path'}" --> ResizeImage
-    ResizeImage -- "{'path':'path'}" --> CropImage
-    CropImage -- "{'path':'path'}" --> BlurImage
-    BlurImage -- "{'path':'path'}" --> GrayscaleImage
-    GrayscaleImage -- "{'path':'path'}" --> RotateImage
+#     LoadImage -- "{'path':'path'}" --> ResizeImage
+#     ResizeImage -- "{'path':'path'}" --> CropImage
+#     CropImage -- "{'path':'path'}" --> BlurImage
+#     BlurImage -- "{'path':'path'}" --> GrayscaleImage
+#     GrayscaleImage -- "{'path':'path'}" --> RotateImage
 
-    RotateImage -- "{'path':'path'}" --> AdjustImage
-    AdjustImage -- "{'path':'path'}" --> FlipImage
-    FlipImage -- "{'path':'path'}" --> WatermarkImage
-    WatermarkImage -- "{'path':'path'}" --> FilterImage
-    FilterImage -- "{'path':'path'}" --> ConvertImageFormat
-""")
+#     RotateImage -- "{'path':'path'}" --> AdjustImage
+#     AdjustImage -- "{'path':'path'}" --> FlipImage
+#     FlipImage -- "{'path':'path'}" --> WatermarkImage
+#     WatermarkImage -- "{'path':'path'}" --> FilterImage
+#     FilterImage -- "{'path':'path'}" --> ConvertImageFormat
+# """)
 
 #     results = engine.run("""
 # graph TD

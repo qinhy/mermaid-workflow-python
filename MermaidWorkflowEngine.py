@@ -636,14 +636,15 @@ class MermaidWorkflowEngine(BaseModel):
         return all_valid
 
     def run(self, mermaid_text: str = None, ignite_func: Optional[Callable] = None,
-            initial_args: dict = {}) -> Dict[str, Any]:
+            initial_args: dict = {},
+            validate_io=True) -> Dict[str, Any]:
         
         ignite_func = ignite_func or (lambda obj, args: obj())
 
         if mermaid_text:
             self._graph = self.parse_mermaid(mermaid_text)
 
-        if not self.validate_io(initial_args=initial_args):
+        if validate_io and not self.validate_io(initial_args=initial_args):
             logger("❌ Workflow validation failed. Exiting.")
             return {}
 
