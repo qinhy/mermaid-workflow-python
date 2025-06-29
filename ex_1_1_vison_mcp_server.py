@@ -237,7 +237,58 @@ class BlurImage(MermaidWorkflowFunction):
             return self.rets
         except Exception as e:
             raise ValueError(f"BlurImage failed: {e}")
-            
+
+class ImagePadding(MermaidWorkflowFunction):
+    description: str = Field("Pad an image to specific height and width ratios (e.g., 1.1x height, 1.2x width).")
+
+    class Parameter(BaseModel):
+        h_ratio: float = Field(..., description="Height ratio to original (e.g., 1.1 means 10% more height)")
+        w_ratio: float = Field(..., description="Width ratio to original (e.g., 1.2 means 20% more width)")
+        color: str = Field("white", description="Padding color (e.g., 'white', 'black', '#RRGGBB')")
+
+    class Arguments(BaseModel):
+        path: str
+
+    class Returns(BaseModel):
+        path: str
+
+    para: Parameter
+    args: Arguments
+    rets: Optional[Returns] = None
+
+    def __call__(self):
+        try:
+            if not os.path.exists(self.args.path):
+                raise FileNotFoundError(f"Image not found: {self.args.path}")
+
+            img = Image.open(self.args.path)
+            orig_w, orig_h = img.size
+
+            # Calculate new size
+            new_h = int(orig_h * self.para.h_ratio)
+            new_w = int(orig_w * self.para.w_ratio)
+
+            delta_w = new_w - orig_w
+            delta_h = new_h - orig_h
+
+            padding = (
+                delta_w // 2,  # left
+                delta_h // 2,  # top
+                delta_w - (delta_w // 2),  # right
+                delta_h - (delta_h // 2)   # bottom
+            )
+
+            padded_img = ImageOps.expand(img, padding, fill=self.para.color)
+
+            output_path = f"{os.path.splitext(self.args.path)[0]}_padded.jpg"
+            padded_img.save(output_path)
+
+            self.rets = self.Returns(path=output_path)
+            return self.rets
+
+        except Exception as e:
+            raise ValueError(f"ImagePadding failed: {e}")
+        
 class AdjustImage(MermaidWorkflowFunction):
     description:str = Field("Adjust the brightness, contrast, or saturation of an image.")
 
@@ -762,19 +813,21 @@ if __name__ == "__main__":
         'ConvertImageFormat':ConvertImageFormat,
         'ImageTiler':ImageTiler,
         'ImagesToPDF':ImagesToPDF,
+        'ImagePadding':ImagePadding,
         })
     
-#     itc,aic = load_RSA("./tmp/image_tiler.rjson","./tmp/private_key.pem")
-#     results = engine.run(f"""
-# graph TD
-#     ImageTiler["{itc}"]
-#     AdjustImage["{aic}"]
-#     ImagesToPDF["{{'args':{{'image_paths':['./tiled_image_adjusted_gray.jpg']}}}}"]
+    itc,aic = load_RSA("./tmp/image_tiler.rjson","./tmp/private_key.pem")
+    results = engine.run(f"""
+graph TD
+    ImageTiler["{itc}"]
+    AdjustImage["{aic}"]
+    ImagesToPDF["{{'args':{{'image_paths':['./tiled_image_adjusted_gray.jpg']}}}}"]
+    ImagePadding["{{'para':{{'h_ratio':1.1,'w_ratio':1.1}} }}"]
 
-#     ImageTiler --> AdjustImage
-#     AdjustImage --> GrayscaleImage
-#     GrayscaleImage --> ImagesToPDF
-# """,lambda obj,args:obj(),validate_io=False)
+    ImageTiler --> AdjustImage
+    AdjustImage --> GrayscaleImage
+    GrayscaleImage --> ImagePadding
+""",lambda obj,args:obj(),validate_io=False)
     
 #     print(engine._name_to_class)
 
