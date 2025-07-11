@@ -636,15 +636,14 @@ class MermaidWorkflowEngine(BaseModel):
         return all_valid
 
     def run(self, mermaid_text: str = None, ignite_func: Optional[Callable] = None,
-            initial_args: dict = {},
-            validate_io=True) -> Dict[str, Any]:
+            initial_args: dict = {}) -> Dict[str, Any]:
         
         ignite_func = ignite_func or (lambda obj, args: obj())
 
         if mermaid_text:
             self._graph = self.parse_mermaid(mermaid_text)
 
-        if validate_io and not self.validate_io(initial_args=initial_args):
+        if not self.validate_io(initial_args=initial_args):
             logger("❌ Workflow validation failed. Exiting.")
             return {}
 
@@ -715,8 +714,7 @@ class MermaidWorkflowEngine(BaseModel):
                     raise ValueError(f"Node '{node_name}' must return dict with 'rets' or have a 'rets' attribute.")
 
             except Exception as e:
-                logger(f"❌ Error executing node '{node_name}': {e}")
-                raise
+                raise ValueError(f"❌ Error executing node '{node_name}': {e}")
 
         self._results['final'] = self._results.get(node_name, {})
         logger(f"✅ Final outputs:\n{json.dumps(self._results, indent=4)}")
